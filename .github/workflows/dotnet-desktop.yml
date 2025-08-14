@@ -15,6 +15,9 @@ on:
           - AHS.GC.ConfigAPI
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
+          - AHS.GC.Cloud.Account
+          - AHS.GC.Cloud.Activity
+          # Add more Cloud sub-APIs here as needed
 
 jobs:
   build:
@@ -94,5 +97,24 @@ jobs:
 
           if ($failedBuilds.Count -gt 0) {
             Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
+            exit 1
+          }
+
+      # --- Build Specific Cloud API ---
+      - name: Build specific Cloud API
+        if: ${{ startsWith(github.event.inputs.apiFolder, 'AHS.GC.Cloud.') && github.event.inputs.apiFolder != 'AHS.GC.Cloud' }}
+        shell: pwsh
+        run: |
+          $folder = "${{ github.event.inputs.apiFolder }}"
+          Write-Host "=== Building Specific Cloud API: $folder ==="
+          $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($proj) {
+            dotnet restore $proj.FullName
+            if ($LASTEXITCODE -ne 0) { Write-Error "Restore failed for $folder"; exit 1 }
+            dotnet build $proj.FullName --configuration Release --no-restore
+            if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for $folder"; exit 1 }
+          }
+          else {
+            Write-Error "❌ No .csproj found in $folder"
             exit 1
           }
