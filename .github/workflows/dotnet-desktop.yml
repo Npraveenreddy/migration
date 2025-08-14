@@ -16,7 +16,7 @@ on:
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
       cloudSubFolder:
-        description: 'Optional: specific Cloud subfolder to build (e.g., Activity, Account)'
+        description: 'Specific Cloud subfolder to build (only valid if apiFolder is AHS.GC.Cloud)'
         required: false
         default: ''
 
@@ -72,27 +72,24 @@ jobs:
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
-      # --- Build Cloud APIs ---
-      - name: Build AHS.GC.Cloud
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
+      # --- Build Cloud Sub-APIs ---
+      - name: Build AHS.GC.Cloud subfolders
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' || github.event.inputs.cloudSubFolder != '' }}
         shell: pwsh
         run: |
           $cloudBase = "AHS.GC.Cloud"
-
-          if ($env:GITHUB_EVENT_INPUTS_cloudSubFolder -and $env:GITHUB_EVENT_INPUTS_cloudSubFolder -ne "") {
-              # Build only the specific Cloud subfolder
-              $foldersToBuild = Get-ChildItem "$cloudBase" -Directory | Where-Object { $_.Name -eq $env:GITHUB_EVENT_INPUTS_cloudSubFolder }
-          } else {
-              # Build all immediate Cloud subfolders
-              $foldersToBuild = Get-ChildItem "$cloudBase" -Directory
-          }
-
           $failedBuilds = @()
 
-          foreach ($folder in $foldersToBuild) {
-              $name = $folder.Name
+          if ($env:GITHUB_EVENT_INPUTS_cloudSubFolder -and $env:GITHUB_EVENT_INPUTS_cloudSubFolder -ne '') {
+              $cloudFolders = @("$cloudBase\$($env:GITHUB_EVENT_INPUTS_cloudSubFolder)")
+          } else {
+              $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
+          }
+
+          foreach ($folder in $cloudFolders) {
+              $name = Split-Path $folder -Leaf
               Write-Host "=== Building Cloud API: $name ==="
-              $proj = Get-ChildItem $folder.FullName -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
               if ($proj) {
                   dotnet restore $proj.FullName
                   if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
