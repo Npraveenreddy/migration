@@ -3,7 +3,7 @@ name: Build All APIs
 on:
   push:
     branches:
-      - test
+      - main
     paths:
       - '.github/workflows/**'
       - 'AHS.GC.Web/**'
