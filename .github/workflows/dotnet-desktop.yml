@@ -88,13 +88,16 @@ jobs:
         run: |
           $cloudBase = "AHS.GC.Cloud"
           $failedBuilds = @()
-
-          if ($env:GITHUB_EVENT_INPUTS_cloudApi -and $env:GITHUB_EVENT_INPUTS_cloudApi -ne 'all') {
-              $cloudFolders = @("$cloudBase\$($env:GITHUB_EVENT_INPUTS_cloudApi)")
+      
+          # Correctly get the selected Cloud API
+          $cloudSelection = '${{ github.event.inputs.cloudApi }}'
+      
+          if ($cloudSelection -and $cloudSelection -ne 'all') {
+              $cloudFolders = @("$cloudBase\$cloudSelection")
           } else {
               $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
           }
-
+      
           foreach ($folder in $cloudFolders) {
               $name = Split-Path $folder -Leaf
               Write-Host "=== Building Cloud API: $name ==="
@@ -109,8 +112,8 @@ jobs:
                   $failedBuilds += $name
               }
           }
-
+      
           if ($failedBuilds.Count -gt 0) {
-              Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
-              exit 1
-          }
+        Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
+        exit 1
+    }
