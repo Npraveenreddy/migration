@@ -15,10 +15,19 @@ on:
           - AHS.GC.ConfigAPI
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
-      cloudSubFolder:
-        description: 'Specific Cloud subfolder to build (only valid if apiFolder is AHS.GC.Cloud)'
+      cloudApi:
+        description: 'Select Cloud API to build (only valid if apiFolder is AHS.GC.Cloud)'
         required: false
-        default: ''
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
 
 jobs:
   build:
@@ -74,14 +83,14 @@ jobs:
 
       # --- Build Cloud Sub-APIs ---
       - name: Build AHS.GC.Cloud subfolders
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' || github.event.inputs.cloudSubFolder != '' }}
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
         shell: pwsh
         run: |
           $cloudBase = "AHS.GC.Cloud"
           $failedBuilds = @()
 
-          if ($env:GITHUB_EVENT_INPUTS_cloudSubFolder -and $env:GITHUB_EVENT_INPUTS_cloudSubFolder -ne '') {
-              $cloudFolders = @("$cloudBase\$($env:GITHUB_EVENT_INPUTS_cloudSubFolder)")
+          if ($env:GITHUB_EVENT_INPUTS_cloudApi -and $env:GITHUB_EVENT_INPUTS_cloudApi -ne 'all') {
+              $cloudFolders = @("$cloudBase\$($env:GITHUB_EVENT_INPUTS_cloudApi)")
           } else {
               $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
           }
