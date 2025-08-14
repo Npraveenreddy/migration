@@ -1,14 +1,15 @@
-name: Build Specific API
+name: Build APIs Manually
 
 on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'API folder to build'
+        description: 'API folder to build (or "all" to build everything)'
         required: true
-        default: 'AHS.GC.Web'
+        default: 'all'
         type: choice
         options:
+          - all
           - AHS.GC.Web
           - AHS.GC.authorizationportal
           - AHS.GC.ConfigAPI
@@ -27,18 +28,71 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Build selected API
+      # --- Build Web ---
+      - name: Build AHS.GC.Web
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
         shell: pwsh
         run: |
-          $folder = "${{ github.event.inputs.apiFolder }}"
-          Write-Host "=== Building API: $folder ==="
+          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.Web"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
 
-          $proj = Get-ChildItem -Path $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($proj) {
-            dotnet restore $proj.FullName
-            dotnet build $proj.FullName --configuration Release --no-restore
+      # --- Build Authorization Portal ---
+      - name: Build AHS.GC.authorizationportal
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
+        shell: pwsh
+        run: |
+          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.authorizationportal"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
+
+      # --- Build ConfigAPI ---
+      - name: Build AHS.GC.ConfigAPI
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.ConfigAPI' }}
+        shell: pwsh
+        run: |
+          $proj = Get-ChildItem "AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.ConfigAPI"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
+
+      # --- Build SmartComm ---
+      - name: Build AHS.GC.SmartComm
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.SmartComm' }}
+        shell: pwsh
+        run: |
+          $proj = Get-ChildItem "AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.SmartComm"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
+
+      # --- Build All Cloud Sub-APIs ---
+      - name: Build AHS.GC.Cloud subfolders
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
+        shell: pwsh
+        run: |
+          $cloudFolders = Get-ChildItem "AHS.GC.Cloud" -Directory
+          $failedBuilds = @()
+
+          foreach ($folder in $cloudFolders) {
+            $name = Split-Path $folder.FullName -Leaf
+            Write-Host "=== Building Cloud API: $name ==="
+            $proj = Get-ChildItem $folder.FullName -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($proj) {
+              dotnet restore $proj.FullName
+              if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
+              dotnet build $proj.FullName --configuration Release --no-restore
+              if ($LASTEXITCODE -ne 0) { $failedBuilds += $name }
+            }
+            else {
+              Write-Host "❌ No .csproj found in $name"
+              $failedBuilds += $name
+            }
           }
-          else {
-            Write-Error "❌ No .csproj found in $folder"
+
+          if ($failedBuilds.Count -gt 0) {
+            Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
             exit 1
           }
