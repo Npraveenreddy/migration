@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - master
-  workflow_dispatch: # allows manual run
+  pull_request:
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,43 +16,40 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: 8.0.x
 
-      # Build each top-level API folder
-      - name: Restore and build top-level APIs
+      - name: Build each API
         shell: pwsh
         run: |
           $apiFolders = @(
             "AHS.GC.Web",
             "AHS.GC.authorizationportal",
             "AHS.GC.ConfigAPI",
-            "AHS.GC.SmartComm"
+            "AHS.GC.SmartComm",
+            "AHS.GC.Cloud.API1",
+            "AHS.GC.Cloud.API2"  # add more cloud APIs here
           )
 
+          $failedBuilds = @()
+
           foreach ($folder in $apiFolders) {
-            $projPath = "./$folder/PortalApi.csproj"
-            if (Test-Path $projPath) {
-              Write-Host "=== Building API: $folder ==="
-              dotnet restore $projPath
-              dotnet build $projPath --configuration Release --no-restore
+            Write-Host "=== Building API: $folder ==="
+            $projectPath = "./$folder/PortalApi.csproj"
+            if (Test-Path $projectPath) {
+              dotnet restore $projectPath
+              dotnet build $projectPath --configuration Release
+              if ($LASTEXITCODE -ne 0) {
+                $failedBuilds += $folder
+              }
             } else {
-              Write-Warning "Skipping $folder — project not found at $projPath"
+              Write-Host "❌ No PortalApi.csproj found in $folder"
+              $failedBuilds += $folder
             }
           }
 
-      # Build each Cloud API subfolder separately
-      - name: Restore and build Cloud APIs
-        shell: pwsh
-        run: |
-          $cloudSubFolders = Get-ChildItem -Path "./AHS.GC.Cloud" -Directory
-          
-          foreach ($sub in $cloudSubFolders) {
-            $projPath = "./AHS.GC.Cloud/$($sub.Name)/PortalApi.csproj"
-            if (Test-Path $projPath) {
-              Write-Host "=== Building Cloud API: $($sub.Name) ==="
-              dotnet restore $projPath
-              dotnet build $projPath --configuration Release --no-restore
-            } else {
-              Write-Warning "Skipping $($sub.Name) — project not found at $projPath"
-            }
+          if ($failedBuilds.Count -gt 0) {
+            Write-Host "Build failed for the following APIs: $($failedBuilds -join ', ')"
+            exit 1
+          } else {
+            Write-Host "✅ All APIs built successfully!"
           }
