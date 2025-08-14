@@ -5,15 +5,7 @@ on:
     branches:
       - main
       - master
-    paths:
-      - '.github/workflows/**'
-      - 'AHS.GC.Web/**'
-      - 'AHS.GC.authorizationportal/**'
-      - 'AHS.GC.ConfigAPI/**'
-      - 'AHS.GC.SmartComm/**'
-      - 'AHS.GC.Cloud/**'
-
-  workflow_dispatch: # allow manual run from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,19 +20,38 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Restore dependencies
+      - name: Restore and build top-level APIs
+        shell: pwsh
         run: |
-          dotnet restore "./AHS.GC.Web/PortalApi.csproj"
-          dotnet restore "./AHS.GC.authorizationportal/PortalApi.csproj"
-          dotnet restore "./AHS.GC.ConfigAPI/PortalApi.csproj"
-          dotnet restore "./AHS.GC.SmartComm/PortalApi.csproj"
-          dotnet restore "./AHS.GC.Cloud/PortalApi.csproj"
+          $topLevelProjects = @(
+            "./AHS.GC.Web/PortalApi.csproj",
+            "./AHS.GC.authorizationportal/PortalApi.csproj",
+            "./AHS.GC.ConfigAPI/PortalApi.csproj",
+            "./AHS.GC.SmartComm/PortalApi.csproj"
+          )
 
-      - name: Build projects
+          foreach ($projPath in $topLevelProjects) {
+            if (Test-Path $projPath) {
+              Write-Host "Restoring $projPath"
+              dotnet restore $projPath
+              Write-Host "Building $projPath"
+              dotnet build $projPath --configuration Release --no-restore
+            } else {
+              Write-Warning "Skipping $projPath — file not found"
+            }
+          }
+
+      - name: Restore and build Cloud sub-APIs
+        shell: pwsh
         run: |
-          dotnet build "./AHS.GC.Web/PortalApi.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.authorizationportal/PortalApi.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.ConfigAPI/PortalApi.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.SmartComm/PortalApi.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.Cloud/PortalApi.csproj" --configuration Release --no-restore
-    
+          $cloudProjects = Get-ChildItem -Path "./AHS.GC.Cloud" -Recurse -Filter *.csproj
+          if (-not $cloudProjects) {
+            Write-Warning "No Cloud API projects found."
+          }
+
+          foreach ($proj in $cloudProjects) {
+            Write-Host "Restoring $($proj.FullName)"
+            dotnet restore $proj.FullName
+            Write-Host "Building $($proj.FullName)"
+            dotnet build $proj.FullName --configuration Release --no-restore
+          }
