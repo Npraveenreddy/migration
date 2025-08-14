@@ -1,17 +1,19 @@
-name: Build All APIs
+name: Build Specific API
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/**'
-      - 'AHS.GC.Web/**'
-      - 'AHS.GC.authorizationportal/**'
-      - 'AHS.GC.ConfigAPI/**'
-      - 'AHS.GC.SmartComm/**'
-      - 'AHS.GC.Cloud/**'
-
+  workflow_dispatch:
+    inputs:
+      apiFolder:
+        description: 'API folder to build'
+        required: true
+        default: 'AHS.GC.Web'
+        type: choice
+        options:
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
 
 jobs:
   build:
@@ -25,46 +27,18 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Build all APIs (including Cloud subfolders)
+      - name: Build selected API
         shell: pwsh
         run: |
-          $apiFolders = @(
-            "AHS.GC.Web",
-            "AHS.GC.authorizationportal",
-            "AHS.GC.ConfigAPI",
-            "AHS.GC.SmartComm"
-          )
+          $folder = "${{ github.event.inputs.apiFolder }}"
+          Write-Host "=== Building API: $folder ==="
 
-          # Add every immediate subfolder of Cloud (account, activity, etc.)
-          $cloudFolders = Get-ChildItem "./AHS.GC.Cloud" -Directory | ForEach-Object { $_.FullName }
-          $apiFolders += $cloudFolders
-
-          $failedBuilds = @()
-
-          foreach ($folder in $apiFolders) {
-            $name = Split-Path $folder -Leaf
-            Write-Host "=== Building API: $name ==="
-
-            # Look for a csproj anywhere in the folder (recursive)
-            $proj = Get-ChildItem -Path $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($proj) {
-              dotnet restore $proj.FullName
-              if ($LASTEXITCODE -ne 0) {
-                $failedBuilds += $name
-                continue
-              }
-              dotnet build $proj.FullName --configuration Release --no-restore
-              if ($LASTEXITCODE -ne 0) {
-                $failedBuilds += $name
-              }
-            }
-            else {
-              Write-Host "❌ No .csproj found in $name"
-              $failedBuilds += $name
-            }
+          $proj = Get-ChildItem -Path $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($proj) {
+            dotnet restore $proj.FullName
+            dotnet build $proj.FullName --configuration Release --no-restore
           }
-
-          if ($failedBuilds.Count -gt 0) {
-            Write-Error "Build failed for the following APIs: $($failedBuilds -join ', ')"
+          else {
+            Write-Error "❌ No .csproj found in $folder"
             exit 1
           }
