@@ -3,46 +3,18 @@ name: Build APIs Manually
 on:
   workflow_dispatch:
     inputs:
-      buildWeb:
-        description: 'Build AHS.GC.Web?'
+      apiFolder:
+        description: 'API folder to build (or "all" to build everything)'
         required: true
-        default: 'yes'
+        default: 'all'
         type: choice
         options:
-          - yes
-          - no
-      buildAuthPortal:
-        description: 'Build AHS.GC.authorizationportal?'
-        required: true
-        default: 'yes'
-        type: choice
-        options:
-          - yes
-          - no
-      buildConfigAPI:
-        description: 'Build AHS.GC.ConfigAPI?'
-        required: true
-        default: 'yes'
-        type: choice
-        options:
-          - yes
-          - no
-      buildSmartComm:
-        description: 'Build AHS.GC.SmartComm?'
-        required: true
-        default: 'yes'
-        type: choice
-        options:
-          - yes
-          - no
-      buildCloud:
-        description: 'Build AHS.GC.Cloud?'
-        required: true
-        default: 'yes'
-        type: choice
-        options:
-          - yes
-          - no
+          - all
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
       cloudApi:
         description: 'Specific Cloud API to build (or "all")'
         required: true
@@ -69,8 +41,9 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
+      # --- Build Web ---
       - name: Build AHS.GC.Web
-        if: ${{ github.event.inputs.buildWeb == 'yes' }}
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
         shell: pwsh
         run: |
           $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -78,8 +51,9 @@ jobs:
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
+      # --- Build Authorization Portal ---
       - name: Build AHS.GC.authorizationportal
-        if: ${{ github.event.inputs.buildAuthPortal == 'yes' }}
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
         shell: pwsh
         run: |
           $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -87,8 +61,9 @@ jobs:
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
+      # --- Build ConfigAPI ---
       - name: Build AHS.GC.ConfigAPI
-        if: ${{ github.event.inputs.buildConfigAPI == 'yes' }}
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.ConfigAPI' }}
         shell: pwsh
         run: |
           $proj = Get-ChildItem "AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -96,8 +71,9 @@ jobs:
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
+      # --- Build SmartComm ---
       - name: Build AHS.GC.SmartComm
-        if: ${{ github.event.inputs.buildSmartComm == 'yes' }}
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.SmartComm' }}
         shell: pwsh
         run: |
           $proj = Get-ChildItem "AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -105,12 +81,15 @@ jobs:
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
+      # --- Build Cloud Sub-APIs ---
       - name: Build AHS.GC.Cloud subfolders
-        if: ${{ github.event.inputs.buildCloud == 'yes' }}
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
         shell: pwsh
         run: |
           $cloudBase = "AHS.GC.Cloud"
           $failedBuilds = @()
+
+          # Get the selected Cloud API from the workflow input
           $cloudSelection = '${{ github.event.inputs.cloudApi }}'
 
           if ($cloudSelection -and $cloudSelection -ne 'all') {
