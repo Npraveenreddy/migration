@@ -6,15 +6,19 @@ on:
       - main
       - master
     paths:
-      - 'portal/**'
-      - 'authorizationportal/**'
-      - 'configapi/**'
-      - 'smartcomm/**'
-      - 'cloudapi/**'
+      - '.github/workflows/**'
+      - 'AHS.GC.Web/**'
+      - 'AHS.GC.authorizationportal/**'
+      - 'AHS.GC.ConfigAPI/**'
+      - 'AHS.GC.SmartComm/**'
+      - 'AHS.GC.Cloud/**'
+
+  workflow_dispatch: # allow manual run from GitHub Actions tab
 
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,16 +30,16 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          dotnet restore ./portal/Portal.csproj
-          dotnet restore ./authorizationportal/AuthorizationPortal.csproj
-          dotnet restore ./configapi/ConfigApi.csproj
-          dotnet restore ./smartcomm/SmartComm.csproj
-          dotnet restore ./cloudapi/CloudApi.csproj
+          dotnet restore "./AHS.GC.Web/AHS.GC.Web.csproj"
+          dotnet restore "./AHS.GC.authorizationportal/AHS.GC.authorizationportal.csproj"
+          dotnet restore "./AHS.GC.ConfigAPI/AHS.GC.ConfigAPI.csproj"
+          dotnet restore "./AHS.GC.SmartComm/AHS.GC.SmartComm.csproj"
+          dotnet restore "./AHS.GC.Cloud/AHS.GC.Cloud.csproj"
 
       - name: Build projects
         run: |
-          dotnet build ./portal/Portal.csproj --configuration Release --no-restore
-          dotnet build ./authorizationportal/AuthorizationPortal.csproj --configuration Release --no-restore
-          dotnet build ./configapi/ConfigApi.csproj --configuration Release --no-restore
-          dotnet build ./smartcomm/SmartComm.csproj --configuration Release --no-restore
-          dotnet build ./cloudapi/CloudApi.csproj --configuration Release --no-restore
+          dotnet build "./AHS.GC.Web/AHS.GC.Web.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.authorizationportal/AHS.GC.authorizationportal.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.ConfigAPI/AHS.GC.ConfigAPI.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.SmartComm/AHS.GC.SmartComm.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.Cloud/AHS.GC.Cloud.csproj" --configuration Release --no-restore
