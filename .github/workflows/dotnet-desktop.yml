@@ -15,9 +15,10 @@ on:
           - AHS.GC.ConfigAPI
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
-          - AHS.GC.Cloud.Account
-          - AHS.GC.Cloud.Activity
-          - AHS.GC.Cloud.AnotherAPI   # Add more cloud APIs as needed
+      cloudSubFolder:
+        description: 'Optional: specific Cloud subfolder to build (e.g., Activity, Account)'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -36,8 +37,7 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
         shell: pwsh
         run: |
-          Set-Location ${{ github.workspace }}
-          $proj = Get-ChildItem "./AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.Web"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -47,8 +47,7 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
         shell: pwsh
         run: |
-          Set-Location ${{ github.workspace }}
-          $proj = Get-ChildItem "./AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.authorizationportal"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -58,8 +57,7 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.ConfigAPI' }}
         shell: pwsh
         run: |
-          Set-Location ${{ github.workspace }}
-          $proj = Get-ChildItem "./AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.ConfigAPI"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -69,58 +67,44 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.SmartComm' }}
         shell: pwsh
         run: |
-          Set-Location ${{ github.workspace }}
-          $proj = Get-ChildItem "./AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.SmartComm"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
-      # --- Build All Cloud Sub-APIs ---
-      - name: Build AHS.GC.Cloud subfolders
+      # --- Build Cloud APIs ---
+      - name: Build AHS.GC.Cloud
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
         shell: pwsh
         run: |
-          Set-Location ${{ github.workspace }}
-          $cloudFolders = Get-ChildItem "./AHS.GC.Cloud" -Directory
+          $cloudBase = "AHS.GC.Cloud"
+
+          if ($env:GITHUB_EVENT_INPUTS_cloudSubFolder -and $env:GITHUB_EVENT_INPUTS_cloudSubFolder -ne "") {
+              # Build only the specific Cloud subfolder
+              $foldersToBuild = Get-ChildItem "$cloudBase" -Directory | Where-Object { $_.Name -eq $env:GITHUB_EVENT_INPUTS_cloudSubFolder }
+          } else {
+              # Build all immediate Cloud subfolders
+              $foldersToBuild = Get-ChildItem "$cloudBase" -Directory
+          }
+
           $failedBuilds = @()
 
-          foreach ($folder in $cloudFolders) {
-            $name = Split-Path $folder.FullName -Leaf
-            Write-Host "=== Building Cloud API: $name ==="
-            $proj = Get-ChildItem $folder.FullName -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($proj) {
-              dotnet restore $proj.FullName
-              if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
-              dotnet build $proj.FullName --configuration Release --no-restore
-              if ($LASTEXITCODE -ne 0) { $failedBuilds += $name }
-            }
-            else {
-              Write-Host "❌ No .csproj found in $name"
-              $failedBuilds += $name
-            }
+          foreach ($folder in $foldersToBuild) {
+              $name = $folder.Name
+              Write-Host "=== Building Cloud API: $name ==="
+              $proj = Get-ChildItem $folder.FullName -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($proj) {
+                  dotnet restore $proj.FullName
+                  if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
+                  dotnet build $proj.FullName --configuration Release --no-restore
+                  if ($LASTEXITCODE -ne 0) { $failedBuilds += $name }
+              } else {
+                  Write-Host "❌ No .csproj found in $name"
+                  $failedBuilds += $name
+              }
           }
 
           if ($failedBuilds.Count -gt 0) {
-            Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
-            exit 1
-          }
-
-      # --- Build Specific Cloud API ---
-      - name: Build Specific Cloud API
-        if: ${{ startsWith(github.event.inputs.apiFolder, 'AHS.GC.Cloud.') && github.event.inputs.apiFolder != 'AHS.GC.Cloud' }}
-        shell: pwsh
-        run: |
-          Set-Location ${{ github.workspace }}
-          $folder = "${{ github.event.inputs.apiFolder }}"
-          Write-Host "=== Building Specific Cloud API: $folder ==="
-          $proj = Get-ChildItem "./$folder" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($proj) {
-            dotnet restore $proj.FullName
-            if ($LASTEXITCODE -ne 0) { Write-Error "Restore failed for $folder"; exit 1 }
-            dotnet build $proj.FullName --configuration Release --no-restore
-            if ($LASTEXITCODE -ne 0) { Write-Error "Build failed for $folder"; exit 1 }
-          }
-          else {
-            Write-Error "❌ No .csproj found in $folder"
-            exit 1
+              Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
+              exit 1
           }
