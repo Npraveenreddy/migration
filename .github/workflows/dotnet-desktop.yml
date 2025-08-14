@@ -30,16 +30,17 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          dotnet restore "./AHS.GC.Web/AHS.GC.Web.csproj"
-          dotnet restore "./AHS.GC.authorizationportal/AHS.GC.authorizationportal.csproj"
-          dotnet restore "./AHS.GC.ConfigAPI/AHS.GC.ConfigAPI.csproj"
-          dotnet restore "./AHS.GC.SmartComm/AHS.GC.SmartComm.csproj"
-          dotnet restore "./AHS.GC.Cloud/AHS.GC.Cloud.csproj"
+          dotnet restore "./AHS.GC.Web/PortalApi.csproj"
+          dotnet restore "./AHS.GC.authorizationportal/PortalApi.csproj"
+          dotnet restore "./AHS.GC.ConfigAPI/PortalApi.csproj"
+          dotnet restore "./AHS.GC.SmartComm/PortalApi.csproj"
+          dotnet restore "./AHS.GC.Cloud/PortalApi.csproj"
 
       - name: Build projects
         run: |
-          dotnet build "./AHS.GC.Web/AHS.GC.Web.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.authorizationportal/AHS.GC.authorizationportal.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.ConfigAPI/AHS.GC.ConfigAPI.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.SmartComm/AHS.GC.SmartComm.csproj" --configuration Release --no-restore
-          dotnet build "./AHS.GC.Cloud/AHS.GC.Cloud.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.Web/PortalApi.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.authorizationportal/PortalApi.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.ConfigAPI/PortalApi.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.SmartComm/PortalApi.csproj" --configuration Release --no-restore
+          dotnet build "./AHS.GC.Cloud/PortalApi.csproj" --configuration Release --no-restore
+    
