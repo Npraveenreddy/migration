@@ -1,0 +1,40 @@
+name: Build All APIs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'portal/**'
+      - 'authorizationportal/**'
+      - 'configapi/**'
+      - 'smartcomm/**'
+      - 'cloudapi/**'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Restore dependencies
+        run: |
+          dotnet restore ./portal/Portal.csproj
+          dotnet restore ./authorizationportal/AuthorizationPortal.csproj
+          dotnet restore ./configapi/ConfigApi.csproj
+          dotnet restore ./smartcomm/SmartComm.csproj
+          dotnet restore ./cloudapi/CloudApi.csproj
+
+      - name: Build projects
+        run: |
+          dotnet build ./portal/Portal.csproj --configuration Release --no-restore
+          dotnet build ./authorizationportal/AuthorizationPortal.csproj --configuration Release --no-restore
+          dotnet build ./configapi/ConfigApi.csproj --configuration Release --no-restore
+          dotnet build ./smartcomm/SmartComm.csproj --configuration Release --no-restore
+          dotnet build ./cloudapi/CloudApi.csproj --configuration Release --no-restore
