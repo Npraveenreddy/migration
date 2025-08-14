@@ -5,7 +5,7 @@ on:
     branches:
       - main
       - master
-  workflow_dispatch:
+  workflow_dispatch: # allows manual run
 
 jobs:
   build:
@@ -20,38 +20,41 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
+      # Build each top-level API folder
       - name: Restore and build top-level APIs
         shell: pwsh
         run: |
-          $topLevelProjects = @(
-            "./AHS.GC.Web/PortalApi.csproj",
-            "./AHS.GC.authorizationportal/PortalApi.csproj",
-            "./AHS.GC.ConfigAPI/PortalApi.csproj",
-            "./AHS.GC.SmartComm/PortalApi.csproj"
+          $apiFolders = @(
+            "AHS.GC.Web",
+            "AHS.GC.authorizationportal",
+            "AHS.GC.ConfigAPI",
+            "AHS.GC.SmartComm"
           )
 
-          foreach ($projPath in $topLevelProjects) {
+          foreach ($folder in $apiFolders) {
+            $projPath = "./$folder/PortalApi.csproj"
             if (Test-Path $projPath) {
-              Write-Host "Restoring $projPath"
+              Write-Host "=== Building API: $folder ==="
               dotnet restore $projPath
-              Write-Host "Building $projPath"
               dotnet build $projPath --configuration Release --no-restore
             } else {
-              Write-Warning "Skipping $projPath — file not found"
+              Write-Warning "Skipping $folder — project not found at $projPath"
             }
           }
 
-      - name: Restore and build Cloud sub-APIs
+      # Build each Cloud API subfolder separately
+      - name: Restore and build Cloud APIs
         shell: pwsh
         run: |
-          $cloudProjects = Get-ChildItem -Path "./AHS.GC.Cloud" -Recurse -Filter *.csproj
-          if (-not $cloudProjects) {
-            Write-Warning "No Cloud API projects found."
-          }
-
-          foreach ($proj in $cloudProjects) {
-            Write-Host "Restoring $($proj.FullName)"
-            dotnet restore $proj.FullName
-            Write-Host "Building $($proj.FullName)"
-            dotnet build $proj.FullName --configuration Release --no-restore
+          $cloudSubFolders = Get-ChildItem -Path "./AHS.GC.Cloud" -Directory
+          
+          foreach ($sub in $cloudSubFolders) {
+            $projPath = "./AHS.GC.Cloud/$($sub.Name)/PortalApi.csproj"
+            if (Test-Path $projPath) {
+              Write-Host "=== Building Cloud API: $($sub.Name) ==="
+              dotnet restore $projPath
+              dotnet build $projPath --configuration Release --no-restore
+            } else {
+              Write-Warning "Skipping $($sub.Name) — project not found at $projPath"
+            }
           }
