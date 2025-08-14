@@ -6,7 +6,11 @@ on:
       - main
       - master
     paths:
-      - 'AHS.GC.*/**'
+      - 'AHS.GC.Web/**'
+      - 'AHS.GC.authorizationportal/**'
+      - 'AHS.GC.ConfigAPI/**'
+      - 'AHS.GC.SmartComm/**'
+      - 'AHS.GC.Cloud/**'
 
 jobs:
   build:
