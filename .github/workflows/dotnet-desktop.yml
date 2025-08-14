@@ -17,7 +17,7 @@ on:
           - AHS.GC.Cloud
           - AHS.GC.Cloud.Account
           - AHS.GC.Cloud.Activity
-          # Add more Cloud sub-APIs here as needed
+          - AHS.GC.Cloud.AnotherAPI   # Add more cloud APIs as needed
 
 jobs:
   build:
@@ -36,7 +36,8 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          Set-Location ${{ github.workspace }}
+          $proj = Get-ChildItem "./AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.Web"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -46,7 +47,8 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          Set-Location ${{ github.workspace }}
+          $proj = Get-ChildItem "./AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.authorizationportal"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -56,7 +58,8 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.ConfigAPI' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          Set-Location ${{ github.workspace }}
+          $proj = Get-ChildItem "./AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.ConfigAPI"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -66,7 +69,8 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.SmartComm' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          Set-Location ${{ github.workspace }}
+          $proj = Get-ChildItem "./AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.SmartComm"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
@@ -76,7 +80,8 @@ jobs:
         if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
         shell: pwsh
         run: |
-          $cloudFolders = Get-ChildItem "AHS.GC.Cloud" -Directory
+          Set-Location ${{ github.workspace }}
+          $cloudFolders = Get-ChildItem "./AHS.GC.Cloud" -Directory
           $failedBuilds = @()
 
           foreach ($folder in $cloudFolders) {
@@ -101,13 +106,14 @@ jobs:
           }
 
       # --- Build Specific Cloud API ---
-      - name: Build specific Cloud API
+      - name: Build Specific Cloud API
         if: ${{ startsWith(github.event.inputs.apiFolder, 'AHS.GC.Cloud.') && github.event.inputs.apiFolder != 'AHS.GC.Cloud' }}
         shell: pwsh
         run: |
+          Set-Location ${{ github.workspace }}
           $folder = "${{ github.event.inputs.apiFolder }}"
           Write-Host "=== Building Specific Cloud API: $folder ==="
-          $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $proj = Get-ChildItem "./$folder" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($proj) {
             dotnet restore $proj.FullName
             if ($LASTEXITCODE -ne 0) { Write-Error "Restore failed for $folder"; exit 1 }
