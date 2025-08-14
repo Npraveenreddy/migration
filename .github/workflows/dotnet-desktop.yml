@@ -4,15 +4,30 @@ on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'Select APIs to build (use "|" to select multiple, or "all")'
+        description: 'API folder to build (or "all" to build everything)'
         required: true
         default: 'all'
-        type: string
+        type: choice
+        options:
+          - all
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
       cloudApi:
-        description: 'Select Cloud APIs to build (use "|" to select multiple, or "all")'
+        description: 'Specific Cloud API to build (or "all")'
         required: true
         default: 'all'
-        type: string
+        type: choice
+        options:
+          - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
 
 jobs:
   build:
@@ -28,63 +43,65 @@ jobs:
 
       # --- Build Web ---
       - name: Build AHS.GC.Web
-        if: contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'all') || contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'AHS.GC.Web')
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.Web"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
       # --- Build Authorization Portal ---
       - name: Build AHS.GC.authorizationportal
-        if: contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'all') || contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'AHS.GC.authorizationportal')
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.authorizationportal"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
       # --- Build ConfigAPI ---
       - name: Build AHS.GC.ConfigAPI
-        if: contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'all') || contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'AHS.GC.ConfigAPI')
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.ConfigAPI' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.ConfigAPI" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.ConfigAPI"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
       # --- Build SmartComm ---
       - name: Build AHS.GC.SmartComm
-        if: contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'all') || contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'AHS.GC.SmartComm')
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.SmartComm' }}
         shell: pwsh
         run: |
-          $proj = Get-ChildItem "AHS.GC.SmartComm" -Filter "*.csproj" -Recurse | Select-Object -First 1
+          $proj = Get-ChildItem "AHS.GC.SmartComm" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) { Write-Error "No .csproj found in AHS.GC.SmartComm"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
 
       # --- Build Cloud Sub-APIs ---
       - name: Build AHS.GC.Cloud subfolders
-        if: contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'all') || contains(split('${{ github.event.inputs.apiFolder }}', '|'), 'AHS.GC.Cloud')
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
         shell: pwsh
         run: |
           $cloudBase = "AHS.GC.Cloud"
           $failedBuilds = @()
-          $cloudSelection = '${{ github.event.inputs.cloudApi }}' -split '\|' | ForEach-Object { $_.Trim() }
 
-          if ($cloudSelection -contains 'all') {
-              $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
+          # Get the selected Cloud API from the workflow input
+          $cloudSelection = '${{ github.event.inputs.cloudApi }}'
+
+          if ($cloudSelection -and $cloudSelection -ne 'all') {
+              $cloudFolders = @("$cloudBase\$cloudSelection")
           } else {
-              $cloudFolders = $cloudSelection | ForEach-Object { Join-Path $cloudBase $_ }
+              $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
           }
 
           foreach ($folder in $cloudFolders) {
               $name = Split-Path $folder -Leaf
               Write-Host "=== Building Cloud API: $name ==="
-              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse | Select-Object -First 1
+              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
               if ($proj) {
                   dotnet restore $proj.FullName
                   if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
