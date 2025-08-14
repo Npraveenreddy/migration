@@ -1,0 +1,55 @@
+name: Build All APIs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build each API
+        shell: pwsh
+        run: |
+          $apiFolders = @(
+            "AHS.GC.Web",
+            "AHS.GC.authorizationportal",
+            "AHS.GC.ConfigAPI",
+            "AHS.GC.SmartComm",
+            "AHS.GC.Cloud.API1",
+            "AHS.GC.Cloud.API2"  # add more cloud APIs here
+          )
+
+          $failedBuilds = @()
+
+          foreach ($folder in $apiFolders) {
+            Write-Host "=== Building API: $folder ==="
+            $projectPath = "./$folder/PortalApi.csproj"
+            if (Test-Path $projectPath) {
+              dotnet restore $projectPath
+              dotnet build $projectPath --configuration Release
+              if ($LASTEXITCODE -ne 0) {
+                $failedBuilds += $folder
+              }
+            } else {
+              Write-Host "❌ No PortalApi.csproj found in $folder"
+              $failedBuilds += $folder
+            }
+          }
+
+          if ($failedBuilds.Count -gt 0) {
+            Write-Host "Build failed for the following APIs: $($failedBuilds -join ', ')"
+            exit 1
+          } else {
+            Write-Host "✅ All APIs built successfully!"
+          }
