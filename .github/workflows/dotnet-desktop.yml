@@ -6,11 +6,13 @@ on:
       - main
       - master
     paths:
+      - '.github/workflows/**'
       - 'AHS.GC.Web/**'
       - 'AHS.GC.authorizationportal/**'
       - 'AHS.GC.ConfigAPI/**'
       - 'AHS.GC.SmartComm/**'
       - 'AHS.GC.Cloud/**'
+
 
 jobs:
   build:
