@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: 📦 Create artifacts folder
-        shell: pwsh
+        shell: powershell
         run: |
           $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
           if (-not (Test-Path $artifactsPath)) {
@@ -47,7 +47,7 @@ jobs:
           }
 
       - name: 📥 Download and Extract Artifacts
-        shell: pwsh
+        shell: powershell
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
@@ -113,7 +113,7 @@ jobs:
 
     steps:
       - name: 🔄 Deploy Extracted APIs to EC2
-        shell: pwsh
+        shell: powershell
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
