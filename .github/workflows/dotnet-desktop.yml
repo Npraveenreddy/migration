@@ -30,23 +30,23 @@ on:
           - member
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     env:
-      DOTNET_ROOT: C:\Program Files\dotnet
       RELEASE_REPO: Npraveenreddy/artifacts
-      RELEASE_TAG: v8.17.2025.08_RC1  # 👈 Your manually created release tag
+      RELEASE_TAG: v8.17.2025.08_RC1
+      DOTNET_ROOT: C:\Program Files\dotnet
 
     steps:
     - name: 📦 Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: 🛠️ Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x'
+        dotnet-version: '6.0.x'
 
-    - name: 🔧 Build and Upload Selected APIs
+    - name: 🔧 Build Selected APIs and Upload Artifacts
       shell: pwsh
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -74,17 +74,30 @@ jobs:
 
         function BuildAndUpload($path, $name) {
           Write-Host "🔨 Building $name"
-          dotnet build "$path/$name.csproj" -c Release
+          $proj = Get-ChildItem $path -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) {
+            Write-Error "❌ No .csproj found in $name"
+            exit 1
+          }
 
-          $zipName = "$name.zip"
-          $zipPath = "$workspace\$zipName"
+          dotnet restore $proj.FullName
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ Restore failed for $name"
+            exit 1
+          }
 
-          Write-Host "📦 Creating ZIP: $zipName"
+          dotnet build $proj.FullName --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ Build failed for $name"
+            exit 1
+          }
+
+          $zipPath = "$workspace\$name.zip"
           Compress-Archive -Path "$path/**/bin/Release/*" -DestinationPath $zipPath
 
           if (Test-Path $zipPath) {
-            Write-Host "📤 Uploading $zipName to release $env:RELEASE_TAG"
             gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
+            Write-Host "✅ Uploaded $name.zip to release $env:RELEASE_TAG"
           } else {
             Write-Error "❌ ZIP not found for $name"
             exit 1
@@ -95,7 +108,7 @@ jobs:
           foreach ($api in $topLevelApis) {
             if ($api -eq "AHS.GC.Cloud") {
               foreach ($sub in $cloudSubApis) {
-                BuildAndUpload "$api/$sub" "$sub"
+                BuildAndUpload "$api\$sub" "$sub"
               }
             } else {
               BuildAndUpload $api $api
@@ -104,10 +117,10 @@ jobs:
         } elseif ($apiFolder -eq "AHS.GC.Cloud") {
           if ($cloudApi -eq "all") {
             foreach ($sub in $cloudSubApis) {
-              BuildAndUpload "$apiFolder/$sub" "$sub"
+              BuildAndUpload "$apiFolder\$sub" "$sub"
             }
           } else {
-            BuildAndUpload "$apiFolder/$cloudApi" "$cloudApi"
+            BuildAndUpload "$apiFolder\$cloudApi" "$cloudApi"
           }
         } else {
           BuildAndUpload $apiFolder $apiFolder
