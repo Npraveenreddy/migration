@@ -1,0 +1,104 @@
+name: Download APIs Manually
+
+on:
+  workflow_dispatch:
+    inputs:
+      apiFolder:
+        description: 'API folder to download (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
+      cloudApi:
+        description: 'Specific Cloud API to download (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
+
+jobs:
+  download:
+    runs-on: windows-latest
+    env:
+      RELEASE_REPO: Npraveenreddy/artifacts
+      RELEASE_TAG: v8.17.2025.08_RC1
+      GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
+
+    steps:
+    - name: 📦 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🛠️ Setup GitHub CLI
+      uses: cli/cli-action@v2
+      with:
+        github-token: ${{ secrets.ARTIFACTS_PAT }}
+
+    - name: 📥 Download and Extract Artifacts
+      shell: pwsh
+      run: |
+        $apiFolder = "${{ github.event.inputs.apiFolder }}"
+        $cloudApi = "${{ github.event.inputs.cloudApi }}"
+        $workspace = $env:GITHUB_WORKSPACE
+        $topLevelApis = @(
+          "AHS.GC.Web",
+          "AHS.GC.authorizationportal",
+          "AHS.GC.ConfigAPI",
+          "AHS.GC.SmartComm",
+          "AHS.GC.Cloud"
+        )
+        $cloudSubApis = @(
+          "account",
+          "activity",
+          "admin",
+          "assessments",
+          "master",
+          "member"
+        )
+
+        function DownloadAndExtract($name) {
+          $zipPath = "$workspace\$name.zip"
+          $extractPath = "$workspace\extracted\$name"
+          echo $env:GITHUB_TOKEN | gh auth login --with-token
+          gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $workspace
+          if (Test-Path $zipPath) {
+            Write-Host "📂 Extracting $name.zip to $extractPath"
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+            Write-Host "✅ Extracted $name"
+          } else {
+            Write-Error "❌ Failed to download $name.zip"
+            exit 1
+          }
+        }
+
+        # Download top-level APIs
+        if ($apiFolder -eq "all") {
+          foreach ($api in $topLevelApis) {
+            if ($api -ne "AHS.GC.Cloud") {
+              DownloadAndExtract $api
+            }
+          }
+        } elseif ($apiFolder -ne "AHS.GC.Cloud") {
+          DownloadAndExtract $apiFolder
+        }
+
+        # Download Cloud APIs
+        if ($cloudApi -eq "all") {
+          foreach ($sub in $cloudSubApis) {
+            DownloadAndExtract $sub
+          }
+        } elseif ($cloudApi -ne "") {
+          DownloadAndExtract $cloudApi
+        }
