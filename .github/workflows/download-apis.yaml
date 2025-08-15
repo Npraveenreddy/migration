@@ -184,11 +184,13 @@ jobs:
               $ssmFile = "$artifactsPath\ssm-script-$name.txt"
               $scriptLines | Out-File -FilePath $ssmFile -Encoding UTF8
 
+              $ssmCommands = Get-Content -Path $ssmFile
               aws ssm send-command `
                 --document-name "AWS-RunPowerShellScript" `
                 --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
-                --parameters commands=@"$ssmFile" `
+                --parameters @{ commands = $ssmCommands } `
                 --region $env:AWS_REGION `
                 --output text
+
             }
           }
