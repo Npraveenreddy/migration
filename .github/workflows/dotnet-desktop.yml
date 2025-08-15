@@ -1,12 +1,33 @@
-name: Release AHS APIs
+name: Build APIs Manually
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: 'Which APIs to release? (comma-separated or "all")'
+      apiFolder:
+        description: 'API folder to build (or "all" to build everything)'
         required: true
         default: 'all'
+        type: choice
+        options:
+          - all
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
+      cloudApi:
+        description: 'Specific Cloud API to build (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
 
 jobs:
   release:
@@ -14,7 +35,7 @@ jobs:
     env:
       DOTNET_ROOT: C:\Program Files\dotnet
       RELEASE_REPO: Npraveenreddy/artifacts
-      RELEASE_TAG: v8.17.2025.08_RC1
+      RELEASE_TAG: v8.17.2025.08_RC1  # 👈 Your manually created release tag
 
     steps:
     - name: 📦 Checkout code
@@ -30,35 +51,64 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        $allApis = @("AHS.GC.Web", "AHS.GC.Auth", "AHS.GC.Admin")  # 👈 Add all available APIs here
-        $input = "${{ github.event.inputs.target }}"
+        $apiFolder = "${{ github.event.inputs.apiFolder }}"
+        $cloudApi = "${{ github.event.inputs.cloudApi }}"
+        $workspace = $env:GITHUB_WORKSPACE
 
-        if ($input -eq "all") {
-          $selectedApis = $allApis
-        } else {
-          $selectedApis = $input.Split(",") | ForEach-Object { $_.Trim() }
-        }
+        $topLevelApis = @(
+          "AHS.GC.Web",
+          "AHS.GC.authorizationportal",
+          "AHS.GC.ConfigAPI",
+          "AHS.GC.SmartComm",
+          "AHS.GC.Cloud"
+        )
 
-        foreach ($api in $selectedApis) {
-          if (-not ($allApis -contains $api)) {
-            Write-Error "❌ Unknown API: $api"
-            exit 1
-          }
+        $cloudSubApis = @(
+          "account",
+          "activity",
+          "admin",
+          "assessments",
+          "master",
+          "member"
+        )
 
-          Write-Host "🔨 Building $api"
-          dotnet build "$api/$api.csproj" -c Release
+        function BuildAndUpload($path, $name) {
+          Write-Host "🔨 Building $name"
+          dotnet build "$path/$name.csproj" -c Release
 
-          $zipName = "$api.zip"
-          $zipPath = "$env:GITHUB_WORKSPACE\$zipName"
+          $zipName = "$name.zip"
+          $zipPath = "$workspace\$zipName"
 
           Write-Host "📦 Creating ZIP: $zipName"
-          Compress-Archive -Path "$api/**/bin/Release/*" -DestinationPath $zipPath
+          Compress-Archive -Path "$path/**/bin/Release/*" -DestinationPath $zipPath
 
           if (Test-Path $zipPath) {
             Write-Host "📤 Uploading $zipName to release $env:RELEASE_TAG"
             gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
           } else {
-            Write-Error "❌ ZIP not found for $api"
+            Write-Error "❌ ZIP not found for $name"
             exit 1
           }
+        }
+
+        if ($apiFolder -eq "all") {
+          foreach ($api in $topLevelApis) {
+            if ($api -eq "AHS.GC.Cloud") {
+              foreach ($sub in $cloudSubApis) {
+                BuildAndUpload "$api/$sub" "$sub"
+              }
+            } else {
+              BuildAndUpload $api $api
+            }
+          }
+        } elseif ($apiFolder -eq "AHS.GC.Cloud") {
+          if ($cloudApi -eq "all") {
+            foreach ($sub in $cloudSubApis) {
+              BuildAndUpload "$apiFolder/$sub" "$sub"
+            }
+          } else {
+            BuildAndUpload "$apiFolder/$cloudApi" "$cloudApi"
+          }
+        } else {
+          BuildAndUpload $apiFolder $apiFolder
         }
