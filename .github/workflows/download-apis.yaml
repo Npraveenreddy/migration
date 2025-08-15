@@ -43,11 +43,9 @@ jobs:
         run: |
           $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
           if (-not (Test-Path $artifactsPath)) {
-            New-Item -Path $artifactsPath -ItemType Directory | Out-Null
-            Write-Host "Created artifacts folder at $artifactsPath"
-          }
-          else {
-            Write-Host "Artifacts folder already exists at $artifactsPath"
+            New-Item -Path $artifactsPath -ItemType Directory
+          } else {
+            Write-Host "Artifacts folder already exists — skipping creation."
           }
 
       - name: Download and Save Artifacts as ZIP
@@ -93,21 +91,15 @@ jobs:
 
           if ($apiFolder -eq "all") {
             foreach ($api in $topLevelApis) {
-              if ($api -ne "AHS.GC.Cloud") {
-                DownloadZip $api
-              }
+              if ($api -ne "AHS.GC.Cloud") { DownloadZip $api }
             }
-          }
-          elseif ($apiFolder -ne "AHS.GC.Cloud") {
+          } elseif ($apiFolder -ne "AHS.GC.Cloud") {
             DownloadZip $apiFolder
           }
 
           if ($cloudApi -eq "all") {
-            foreach ($sub in $cloudSubApis) {
-              DownloadZip $sub
-            }
-          }
-          elseif ($cloudSubApis -contains $cloudApi) {
+            foreach ($sub in $cloudSubApis) { DownloadZip $sub }
+          } elseif ($cloudSubApis -contains $cloudApi) {
             DownloadZip $cloudApi
           }
 
@@ -115,29 +107,55 @@ jobs:
     runs-on: self-hosted
     needs: download
     env:
-      EC2_HOST: ${{ secrets.EC2_HOST }} # Hostname or IP
-      EC2_USER: ${{ secrets.EC2_USER }} # e.g., ec2-user
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
       SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
     steps:
       - name: Deploy artifacts to EC2 via SSH
-        shell: bash
+        shell: powershell
         run: |
-          ARTIFACTS_DIR="$GITHUB_WORKSPACE/artifacts"
+          $ARTIFACTS_DIR = "$env:GITHUB_WORKSPACE\artifacts"
+          $sshKeyPath = "ssh_key.pem"
 
-          echo "$SSH_KEY" > ssh_key.pem
-          chmod 600 ssh_key.pem
+          # Save SSH key
+          Set-Content -Path $sshKeyPath -Value $env:SSH_KEY
+          icacls $sshKeyPath /inheritance:r /grant:r "$($env:USERNAME):(R)"
 
-          echo "Uploading ZIP files to EC2..."
-          scp -i ssh_key.pem "$ARTIFACTS_DIR"/*.zip $EC2_USER@$EC2_HOST:/tmp/
+          # Upload ZIPs to EC2
+          Write-Host "Uploading ZIP files to EC2..."
+          scp -i $sshKeyPath "$ARTIFACTS_DIR\*.zip" "$($env:EC2_USER)@$($env:EC2_HOST):/tmp/"
 
-          echo "Extracting and deploying on EC2..."
-          ssh -i ssh_key.pem $EC2_USER@$EC2_HOST << 'EOF'
-            for zip in /tmp/*.zip; do
-              name=$(basename "$zip" .zip)
-              target_dir="/var/www/$name"
-              mkdir -p "$target_dir"
-              unzip -o "$zip" -d "$target_dir"
-              rm -f "$zip"
-            done
-          EOF
+          # Map ZIP names to deployment directories
+          $targetMap = @{
+            "AHS.GC.Web"              = "/var/www/Portal"
+            "AHS.GC.authorizationportal" = "/var/www/AuthorizationPortal"
+            "AHS.GC.ConfigAPI"        = "/var/www/CONFIGAPI"
+            "AHS.GC.SmartComm"        = "/var/www/SmartCommAPI"
+            "account"                 = "/var/www/CloudAPI"
+            "activity"                = "/var/www/CloudAPI"
+            "admin"                   = "/var/www/CloudAPI"
+            "assessments"             = "/var/www/CloudAPI"
+            "master"                  = "/var/www/CloudAPI"
+            "member"                  = "/var/www/CloudAPI"
+          }
+
+          # Remote extract and cleanup
+          Write-Host "Extracting and deploying on EC2..."
+          $remoteScript = @'
+          for zip in /tmp/*.zip; do
+            name=$(basename "$zip" .zip)
+            case "$name" in
+              "AHS.GC.Web") target="/var/www/Portal" ;;
+              "AHS.GC.authorizationportal") target="/var/www/AuthorizationPortal" ;;
+              "AHS.GC.ConfigAPI") target="/var/www/CONFIGAPI" ;;
+              "AHS.GC.SmartComm") target="/var/www/SmartCommAPI" ;;
+              "account"|"activity"|"admin"|"assessments"|"master"|"member") target="/var/www/CloudAPI" ;;
+              *) target="/var/www/$name" ;;
+            esac
+            mkdir -p "$target"
+            unzip -o "$zip" -d "$target"
+            rm -f "$zip"
+          done
+          '@
+          ssh -i $sshKeyPath "$($env:EC2_USER)@$($env:EC2_HOST)" $remoteScript
