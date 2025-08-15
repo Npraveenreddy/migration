@@ -1,4 +1,4 @@
-name: Download and Deploy APIs via SSM
+name: Download and Deploy APIs to EC2
 
 on:
   workflow_dispatch:
@@ -30,117 +30,155 @@ on:
           - member
 
 jobs:
-  download-and-deploy:
+  download:
     runs-on: windows-latest
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
       RELEASE_TAG: v8.17.2025.08_RC1
       GH_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
+
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📥 Download and Extract Artifacts
+        shell: pwsh
+        run: |
+          $apiFolder = "${{ github.event.inputs.apiFolder }}"
+          $cloudApi = "${{ github.event.inputs.cloudApi }}"
+          $workspace = $env:GITHUB_WORKSPACE
+          $topLevelApis = @(
+            "AHS.GC.Web",
+            "AHS.GC.authorizationportal",
+            "AHS.GC.ConfigAPI",
+            "AHS.GC.SmartComm",
+            "AHS.GC.Cloud"
+          )
+          $cloudSubApis = @(
+            "account",
+            "activity",
+            "admin",
+            "assessments",
+            "master",
+            "member"
+          )
+
+          function DownloadAndExtract($name) {
+            $zipPath = "$workspace\$name.zip"
+            $extractPath = "$workspace\extracted\$name"
+            echo $env:GH_TOKEN | gh auth login --with-token
+            gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $workspace
+            if (Test-Path $zipPath) {
+              Write-Host "📂 Extracting $name.zip to $extractPath"
+              Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+              Write-Host "✅ Extracted $name"
+            } else {
+              Write-Error "❌ Failed to download $name.zip"
+              exit 1
+            }
+          }
+
+          if ($apiFolder -eq "all") {
+            foreach ($api in $topLevelApis) {
+              if ($api -ne "AHS.GC.Cloud") {
+                DownloadAndExtract $api
+              }
+            }
+          } elseif ($apiFolder -ne "AHS.GC.Cloud") {
+            DownloadAndExtract $apiFolder
+          }
+
+          if ($cloudApi -eq "all") {
+            foreach ($sub in $cloudSubApis) {
+              DownloadAndExtract $sub
+            }
+          } elseif ($cloudApi -ne "") {
+            DownloadAndExtract $cloudApi
+
+  deploy-to-ec2:
+    runs-on: windows-latest
+    needs: download
+    env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
       EC2_INSTANCE_ID: i-0409b449dd184132b
 
     steps:
-    - name: 📦 Checkout code
-      uses: actions/checkout@v4
-
-    - name: 📥 Download and Extract Artifacts
-      shell: pwsh
-      run: |
-        $apiFolder = "${{ github.event.inputs.apiFolder }}"
-        $cloudApi = "${{ github.event.inputs.cloudApi }}"
-        $workspace = $env:GITHUB_WORKSPACE
-        $topLevelApis = @(
-          "AHS.GC.Web",
-          "AHS.GC.authorizationportal",
-          "AHS.GC.ConfigAPI",
-          "AHS.GC.SmartComm",
-          "AHS.GC.Cloud"
-        )
-        $cloudSubApis = @(
-          "account",
-          "activity",
-          "admin",
-          "assessments",
-          "master",
-          "member"
-        )
-        $selectedApis = @()
-
-        function DownloadAndExtract($name) {
-          $zipPath = "$workspace\$name.zip"
-          $extractPath = "$workspace\extracted\$name"
-          echo $env:GH_TOKEN | gh auth login --with-token
-          gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $workspace
-          if (Test-Path $zipPath) {
-            Write-Host "📂 Extracting $name.zip to $extractPath"
-            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-            Write-Host "✅ Extracted $name"
-            $selectedApis += $name
-          } else {
-            Write-Error "❌ Failed to download $name.zip"
-            exit 1
+      - name: 🔄 Deploy Extracted APIs to EC2
+        shell: pwsh
+        run: |
+          $apiFolder = "${{ github.event.inputs.apiFolder }}"
+          $cloudApi = "${{ github.event.inputs.cloudApi }}"
+          $workspace = $env:GITHUB_WORKSPACE
+          $topLevelApis = @(
+            "AHS.GC.Web",
+            "AHS.GC.authorizationportal",
+            "AHS.GC.ConfigAPI",
+            "AHS.GC.SmartComm"
+          )
+          $cloudSubApis = @(
+            "account",
+            "activity",
+            "admin",
+            "assessments",
+            "master",
+            "member"
+          )
+          $targetMap = @{
+            "AHS.GC.Web"               = "Portal"
+            "AHS.GC.authorizationportal" = "AuthorizationPortal"
+            "AHS.GC.ConfigAPI"         = "CONFIGAPI"
+            "AHS.GC.SmartComm"         = "SmartCommAPI"
+            "account"                  = "CloudAPI"
+            "activity"                 = "CloudAPI"
+            "admin"                    = "CloudAPI"
+            "assessments"              = "CloudAPI"
+            "master"                   = "CloudAPI"
+            "member"                   = "CloudAPI"
           }
-        }
 
-        if ($apiFolder -eq "all") {
-          foreach ($api in $topLevelApis) {
-            if ($api -ne "AHS.GC.Cloud") {
-              DownloadAndExtract $api
+          $selectedApis = @()
+
+          if ($apiFolder -eq "all") {
+            $selectedApis += $topLevelApis
+          } elseif ($topLevelApis -contains $apiFolder) {
+            $selectedApis += $apiFolder
+          }
+
+          if ($cloudApi -eq "all") {
+            $selectedApis += $cloudSubApis
+          } elseif ($cloudSubApis -contains $cloudApi) {
+            $selectedApis += $cloudApi
+          }
+
+          foreach ($name in $selectedApis) {
+            $sourcePath = "$workspace\extracted\$name"
+            if (-not (Test-Path $sourcePath)) {
+              Write-Host "⚠️ Skipping $name — no extracted folder found"
+              continue
+            }
+
+            $files = Get-ChildItem -Path $sourcePath -Recurse | Where-Object { -not $_.PSIsContainer }
+            foreach ($file in $files) {
+              $relativePath = $file.FullName.Substring($sourcePath.Length + 1)
+              $destinationPath = "C:\\inetpub\\wwwroot\\Deployment\\GITHUB\\$($targetMap[$name])\\$relativePath"
+              $content = Get-Content -Path $file.FullName -Raw
+
+              $scriptLines = @()
+              $scriptLines += "\$content = @'"
+              $scriptLines += $content
+              $scriptLines += "'@"
+              $scriptLines += "Set-Content -Path `"$destinationPath`" -Value \$content"
+
+              $ssmFile = "$workspace\ssm-script-$name.txt"
+              $scriptLines | Out-File -FilePath $ssmFile -Encoding UTF8
+
+              aws ssm send-command `
+                --document-name "AWS-RunPowerShellScript" `
+                --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
+                --parameters commands=@"$ssmFile" `
+                --region $env:AWS_REGION `
+                --output text
             }
           }
-        } elseif ($apiFolder -ne "AHS.GC.Cloud") {
-          DownloadAndExtract $apiFolder
-        }
-
-        if ($cloudApi -eq "all") {
-          foreach ($sub in $cloudSubApis) {
-            DownloadAndExtract $sub
-          }
-        } elseif ($cloudApi -ne "") {
-          DownloadAndExtract $cloudApi
-        }
-
-        # Deploy to EC2 via SSM
-        $targetMap = @{
-          "AHS.GC.Web"               = "Portal"
-          "AHS.GC.authorizationportal" = "AuthorizationPortal"
-          "AHS.GC.ConfigAPI"         = "CONFIGAPI"
-          "AHS.GC.SmartComm"         = "SmartCommAPI"
-          "account"                  = "CloudAPI"
-          "activity"                 = "CloudAPI"
-          "admin"                    = "CloudAPI"
-          "assessments"              = "CloudAPI"
-          "master"                   = "CloudAPI"
-          "member"                   = "CloudAPI"
-        }
-
-        foreach ($name in $selectedApis) {
-          $sourcePath = "$workspace\extracted\$name"
-          $files = Get-ChildItem -Path $sourcePath -Recurse | Where-Object { -not $_.PSIsContainer }
-
-          foreach ($file in $files) {
-            $relativePath = $file.FullName.Substring($sourcePath.Length + 1)
-            $destinationPath = "C:\\inetpub\\wwwroot\\Deployment\\GITHUB\\$($targetMap[$name])\\$relativePath"
-            $content = Get-Content -Path $file.FullName -Raw
-
-            $ssmScript = @"
-        \$content = @'
-          $content
-          '@
-          Set-Content -Path "$destinationPath" -Value \$content
-          "@
-
-            $ssmFile = "$workspace\ssm-script-$name.txt"
-            Set-Content -Path $ssmFile -Value $ssmScript
-
-            aws ssm send-command `
-              --document-name "AWS-RunPowerShellScript" `
-              --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
-              --comment "Deploy $name file $relativePath" `
-              --parameters commands=@"$ssmFile" `
-              --region $env:AWS_REGION `
-              --output text
-          }
-        }
