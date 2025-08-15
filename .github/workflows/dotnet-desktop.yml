@@ -1,12 +1,9 @@
 name: Create Folder on EC2
 
 on:
-  workflow_dispatch:
-    inputs:
-      folderPath:
-        description: 'Folder path to create on EC2 (e.g., C:\BuildOutput\Logs)'
-        required: true
-        default: 'C:\BuildOutput\Logs'
+  push:
+    branches:
+      - main  # Change to your target branch
 
 jobs:
   create-folder:
@@ -23,8 +20,8 @@ jobs:
       - name: Create folder on EC2 via SSM
         run: |
           aws ssm send-command \
-          --document-name "AWS-RunPowerShellScript" \
-          --targets Key=instanceIds,Values=i-0409b449dd184132b \
-          --comment "Create folder on C drive" \
-          --parameters "commands=[\"New-Item -Path 'C:\\BuildOutput\\Logs' -ItemType Directory\"]" \
-          --output text
+            --document-name "AWS-RunPowerShellScript" \
+            --targets Key=instanceIds,Values=i-0409b449dd184132b \
+            --comment "Create folder on C drive" \
+            --parameters "commands=[\"New-Item -Path 'C:\\praveen' -ItemType Directory\"]" \
+            --output text
