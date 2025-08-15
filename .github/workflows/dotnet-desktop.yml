@@ -36,7 +36,7 @@ jobs:
     runs-on: windows-latest
 
     env:
-      RELEASE_TAG: v1.0.0  # You can make this dynamic if needed
+      RELEASE_TAG: v8.17.2025.08_RC1  # You can make this dynamic if needed
 
     steps:
       - name: ⬇️ Checkout code
@@ -65,30 +65,26 @@ jobs:
               Write-Host "📤 Uploaded $name.zip to release $releaseTag"
           }
 
+          # Build selected top-level folder (excluding AHS.GC.Cloud)
           if ($apiFolder -eq "all") {
               foreach ($folder in $topLevelApis) {
-                  if ($folder -eq "AHS.GC.Cloud") {
-                      foreach ($sub in $cloudSubApis) {
-                          BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
-                      }
-                  }
-                  else {
+                  if ($folder -ne "AHS.GC.Cloud") {
                       BuildAndUpload $folder $folder
                   }
               }
           }
-          else {
-              if ($apiFolder -eq "AHS.GC.Cloud") {
-                  if ($cloudApi -eq "all") {
-                      foreach ($sub in $cloudSubApis) {
-                          BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
-                      }
-                  }
-                  elseif ($cloudApi -ne "") {
-                      BuildAndUpload "AHS.GC.Cloud\$cloudApi" "$cloudApi"
+          elseif ($apiFolder -ne "AHS.GC.Cloud") {
+              BuildAndUpload $apiFolder $apiFolder
+          }
+
+          # Build Cloud APIs if selected
+          if ($apiFolder -eq "all" -or $apiFolder -eq "AHS.GC.Cloud" -or $cloudApi -ne "") {
+              if ($cloudApi -eq "all") {
+                  foreach ($sub in $cloudSubApis) {
+                      BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
                   }
               }
-              else {
-                  BuildAndUpload $apiFolder $apiFolder
+              elseif ($cloudApi -ne "") {
+                  BuildAndUpload "AHS.GC.Cloud\$cloudApi" "$cloudApi"
               }
           }
