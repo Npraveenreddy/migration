@@ -10,10 +10,11 @@ on:
         type: choice
         options:
           - AHS.GC.Web
-          - AHS.GC.authorizationportal
-          - AHS.GC.ConfigAPI
-          - AHS.GC.SmartComm
           - AHS.GC.Cloud
+          - SmartComm
+          - Config
+          - Common
+          - Integration
           - all
       cloudApi:
         description: 'Specific Cloud API to build (or "all")'
@@ -22,27 +23,27 @@ on:
         type: choice
         options:
           - ''
-          - all
           - account
-          - activity
-          - admin
-          - assessments
-          - master
-          - member
+          - user
+          - notification
+          - billing
+          - reporting
+          - analytics
+          - all
 
 jobs:
   build-and-release:
     runs-on: windows-latest
 
     env:
-      RELEASE_TAG: v1.0.0
+      RELEASE_TAG: v1.0.0  # You can make this dynamic if needed
 
     steps:
       - name: ⬇️ Checkout code
         uses: actions/checkout@v3
 
       - name: 🔧 Setup GitHub CLI
-        uses: actions/setup-gh@v3
+        uses: cli/cli-action@v1
 
       - name: 🔐 Authenticate GitHub CLI
         run: gh auth setup-git
