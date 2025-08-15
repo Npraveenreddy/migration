@@ -94,6 +94,7 @@ jobs:
             }
           } elseif ($cloudApi -ne "") {
             DownloadAndExtract $cloudApi
+          }
 
   deploy-to-ec2:
     runs-on: windows-latest
