@@ -31,7 +31,7 @@ on:
 
 jobs:
   download:
-    runs-on: [self-hosted, windows]
+    runs-on: self-hosted
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
       RELEASE_TAG: v8.17.2025.08_RC1
@@ -103,7 +103,7 @@ jobs:
           }
 
   deploy-to-ec2:
-    runs-on: [self-hosted, windows]
+    runs-on: self-hosted
     needs: download
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
