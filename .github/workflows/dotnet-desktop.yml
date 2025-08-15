@@ -1,130 +1,85 @@
-name: Build APIs Manually
+name: Build and Release APIs
 
 on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'API folder to build (or "all" to build everything)'
+        description: 'API folder to build (AHS.GC.Web, AHS.GC.Cloud, or all)'
         required: true
-        default: 'all'
+        default: 'AHS.GC.Web'
         type: choice
         options:
-          - all
           - AHS.GC.Web
-          - AHS.GC.authorizationportal
-          - AHS.GC.ConfigAPI
-          - AHS.GC.SmartComm
           - AHS.GC.Cloud
+          - all
       cloudApi:
-        description: 'Specific Cloud API to build (or "all")'
-        required: true
-        default: 'all'
+        description: 'Specific Cloud API to build (account, user, all, or leave blank)'
+        required: false
+        default: ''
         type: choice
         options:
-          - all
+          - ''
           - account
-          - activity
-          - admin
-          - assessments
-          - master
-          - member
+          - user
+          - all
 
 jobs:
-  build:
+  build-and-release:
     runs-on: windows-latest
+
     env:
-      RELEASE_REPO: Npraveenreddy/artifacts
-      RELEASE_TAG: v8.17.2025.08_RC1
-      DOTNET_ROOT: C:\Program Files\dotnet
-      GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}  # ✅ Use your custom PAT here
+      RELEASE_TAG: v1.0.0  # You can make this dynamic if needed
 
     steps:
-    - name: 📦 Checkout code
-      uses: actions/checkout@v4
+      - name: ⬇️ Checkout code
+        uses: actions/checkout@v3
 
-    - name: 🛠️ Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '6.0.x'
+      - name: 🔧 Setup GitHub CLI
+        uses: actions/setup-gh@v3
 
-    - name: 🔧 Build Selected APIs and Upload Artifacts
-      shell: pwsh
-      run: |
-        $apiFolder = "${{ github.event.inputs.apiFolder }}"
-        $cloudApi = "${{ github.event.inputs.cloudApi }}"
-        $workspace = $env:GITHUB_WORKSPACE
+      - name: 🔐 Authenticate GitHub CLI
+        run: gh auth setup-git
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        $topLevelApis = @(
-          "AHS.GC.Web",
-          "AHS.GC.authorizationportal",
-          "AHS.GC.ConfigAPI",
-          "AHS.GC.SmartComm",
-          "AHS.GC.Cloud"
-        )
+      - name: 🛠️ Build and Upload APIs
+        shell: pwsh
+        run: |
+          $apiFolder = "${{ github.event.inputs.apiFolder }}"
+          $cloudApi = "${{ github.event.inputs.cloudApi }}"
 
-        $cloudSubApis = @(
-          "account",
-          "activity",
-          "admin",
-          "assessments",
-          "master",
-          "member"
-        )
+          $workspace = "$env:GITHUB_WORKSPACE"
+          $releaseTag = $env:RELEASE_TAG
+          $cloudSubApis = @("account", "user", "notification")  # Add more as needed
 
-        function BuildAndUpload($path, $name) {
-          Write-Host "🔨 Building $name"
-          $proj = Get-ChildItem $path -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $proj) {
-            Write-Error "❌ No .csproj found in $name"
-            exit 1
+          function BuildAndUpload($path, $name) {
+              Write-Host "📁 Building: $path ($name)"
+              $zipPath = "$workspace\$name.zip"
+              Compress-Archive -Path "$workspace\$path\*" -DestinationPath $zipPath -Force
+              Write-Host "📦 Created ZIP: $zipPath"
+              gh release upload $releaseTag $zipPath --clobber
+              Write-Host "📤 Uploaded $name.zip to release $releaseTag"
           }
 
-          dotnet restore $proj.FullName
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ Restore failed for $name"
-            exit 1
-          }
-
-          dotnet build $proj.FullName --configuration Release --no-restore
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ Build failed for $name"
-            exit 1
-          }
-
-          $outputPath = Join-Path $path "bin\Release\net6.0"
-          $zipPath = "$workspace\$name.zip"
-
-          Write-Host "📦 Zipping contents of: $outputPath"
-          Compress-Archive -Path "$outputPath\*" -DestinationPath $zipPath
-
-          if (Test-Path $zipPath) {
-            echo $env:GITHUB_TOKEN | gh auth login --with-token  # ✅ Explicitly authenticate
-            gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
-            Write-Host "✅ Uploaded $name.zip to release $env:RELEASE_TAG"
-          } else {
-            Write-Error "❌ ZIP not found for $name"
-            exit 1
-          }
-        }
-
-        if ($apiFolder -eq "all") {
-          foreach ($api in $topLevelApis) {
-            if ($api -eq "AHS.GC.Cloud") {
+          if ($apiFolder -eq "all") {
+              BuildAndUpload "AHS.GC.Web" "AHS.GC.Web"
               foreach ($sub in $cloudSubApis) {
-                BuildAndUpload "$api\$sub" "$sub"
+                  BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
               }
-            } else {
-              BuildAndUpload $api $api
-            }
           }
-        } elseif ($apiFolder -eq "AHS.GC.Cloud") {
-          if ($cloudApi -eq "all") {
-            foreach ($sub in $cloudSubApis) {
-              BuildAndUpload "$apiFolder\$sub" "$sub"
-            }
-          } else {
-            BuildAndUpload "$apiFolder\$cloudApi" "$cloudApi"
+          else {
+              if ($apiFolder -eq "AHS.GC.Web") {
+                  BuildAndUpload "AHS.GC.Web" "AHS.GC.Web"
+              }
+
+              if ($cloudApi -ne "") {
+                  if ($cloudApi -eq "all") {
+                      foreach ($sub in $cloudSubApis) {
+                          BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
+                      }
+                  }
+                  else {
+                      BuildAndUpload "AHS.GC.Cloud\$cloudApi" "$cloudApi"
+                  }
+              }
           }
-        } else {
-          BuildAndUpload $apiFolder $apiFolder
-        }
