@@ -49,7 +49,7 @@ jobs:
     - name: 🔧 Build Selected APIs and Upload Artifacts
       shell: pwsh
       env:
-        GITHUB_TOKEN: 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
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         $apiFolder = "${{ github.event.inputs.apiFolder }}"
         $cloudApi = "${{ github.event.inputs.cloudApi }}"
