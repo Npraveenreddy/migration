@@ -74,7 +74,7 @@ jobs:
             $extractPath = "$artifactsPath\$name"
 
             echo $env:GH_TOKEN | gh auth login --with-token
-            gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $artifactsPath
+            gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $artifactsPath --clobber
 
             if (Test-Path $zipPath) {
               Write-Host "Extracting $name.zip to $extractPath"
@@ -100,7 +100,7 @@ jobs:
             foreach ($sub in $cloudSubApis) {
               DownloadAndExtract $sub
             }
-          } elseif ($cloudApi -ne "") {
+          } elseif ($cloudSubApis -contains $cloudApi) {
             DownloadAndExtract $cloudApi
           }
 
