@@ -23,8 +23,8 @@ jobs:
       - name: Create folder on EC2 via SSM
         run: |
           aws ssm send-command \
-            --document-name "AWS-RunPowerShellScript" \
-            --targets "Key=instanceIds,Values=i-0409b449dd184132b" \  # Replace with your EC2 instance ID
-            --comment "Create folder on C drive" \
-            --parameters "commands=[\"New-Item -Path 'C:\\BuildOutput\\Logs' -ItemType Directory\"]" \
-            --output text
+          --document-name "AWS-RunPowerShellScript" \
+          --targets Key=instanceIds,Values=i-0409b449dd184132b \
+          --comment "Create folder on C drive" \
+          --parameters "commands=[\"New-Item -Path 'C:\\BuildOutput\\Logs' -ItemType Directory\"]" \
+          --output text
