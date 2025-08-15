@@ -34,20 +34,36 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        api: [AHS.GC.Web, AHS.GC.authorizationportal, AHS.GC.ConfigAPI, AHS.GC.SmartComm]
-    # Only run if apiFolder is 'all' or matches the current matrix.api
-    if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == matrix.api }}
+        include:
+          - api: AHS.GC.Web
+          - api: AHS.GC.authorizationportal
+          - api: AHS.GC.ConfigAPI
+          - api: AHS.GC.SmartComm
     name: Build ${{ matrix.api }}
     steps:
+      - name: Check if this API should be built
+        id: should_build
+        shell: pwsh
+        run: |
+          $input = '${{ github.event.inputs.apiFolder }}'
+          $api = '${{ matrix.api }}'
+          if ($input -eq 'all' -or $input -eq $api) {
+            echo "::set-output name=build::true"
+          } else {
+            echo "::set-output name=build::false"
+          }
       - name: Checkout code
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
 
       - name: Build ${{ matrix.api }}
+        if: steps.should_build.outputs.build == 'true'
         shell: pwsh
         run: |
           Write-Host "🔧 Building ${{ matrix.api }}"
