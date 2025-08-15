@@ -30,92 +30,84 @@ on:
           - member
 
 jobs:
-  build-api:
+  build:
     runs-on: windows-latest
-    if: ${{ github.event.inputs.apiFolder != 'AHS.GC.Cloud' }}
-    strategy:
-      matrix:
-        include:
-          - api: AHS.GC.Web
-          - api: AHS.GC.authorizationportal
-          - api: AHS.GC.ConfigAPI
-          - api: AHS.GC.SmartComm
-    name: Build ${{ matrix.api }}
+    env:
+      RELEASE_TAG: v8.17.2025.08_RC1
+      RELEASE_REPO: Npraveenreddy/artifacts
+      GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
     steps:
-      - name: Check if this API should be built
-        id: should_build
-        shell: pwsh
-        run: |
-          $input = '${{ github.event.inputs.apiFolder }}'
-          $api = '${{ matrix.api }}'
-          if ($input -eq 'all' -or $input -eq $api) {
-            echo "::set-output name=build::true"
-          } else {
-            echo "::set-output name=build::false"
-          }
       - name: Checkout code
-        if: steps.should_build.outputs.build == 'true'
         uses: actions/checkout@v4
 
       - name: Setup .NET
-        if: steps.should_build.outputs.build == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
 
-      - name: Build ${{ matrix.api }}
-        if: steps.should_build.outputs.build == 'true'
+      - name: Install GitHub CLI
+        run: |
+          choco install gh -y
+
+      # --- Build & Upload AHS.GC.Web ---
+      - name: Build AHS.GC.Web
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
         shell: pwsh
         run: |
-          Write-Host "🔧 Building ${{ matrix.api }}"
-          $proj = Get-ChildItem "${{ matrix.api }}" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $proj) { Write-Error "❌ No .csproj found in ${{ matrix.api }}"; exit 1 }
+          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse | Select-Object -First 1
+          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.Web"; exit 1 }
           dotnet restore $proj.FullName
           dotnet build $proj.FullName --configuration Release --no-restore
+          Compress-Archive -Path "AHS.GC.Web/**/bin/Release/*" -DestinationPath "AHS.GC.Web.zip"
 
-  build-cloud:
-    runs-on: windows-latest
-    if: ${{ github.event.inputs.apiFolder == 'AHS.GC.Cloud' || github.event.inputs.apiFolder == 'all' }}
-    strategy:
-      matrix:
-        include:
-          - subapi: account
-          - subapi: activity
-          - subapi: admin
-          - subapi: assessments
-          - subapi: master
-          - subapi: member
-    name: Build Cloud API ${{ matrix.subapi }}
-    steps:
-      - name: Check if this Cloud API should be built
-        id: should_build
+      - name: Upload AHS.GC.Web.zip to Artifacts Release
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
+        run: |
+          gh release upload $env:RELEASE_TAG "AHS.GC.Web.zip" --repo $env:RELEASE_REPO --clobber
+
+      # --- Build & Upload AHS.GC.authorizationportal ---
+      - name: Build AHS.GC.authorizationportal
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
         shell: pwsh
         run: |
-          $input = '${{ github.event.inputs.cloudApi }}'
-          $subapi = '${{ matrix.subapi }}'
-          if ($input -eq 'all' -or $input -eq $subapi) {
-            echo "::set-output name=build::true"
+          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse | Select-Object -First 1
+          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.authorizationportal"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
+          Compress-Archive -Path "AHS.GC.authorizationportal/**/bin/Release/*" -DestinationPath "AHS.GC.authorizationportal.zip"
+
+      - name: Upload AHS.GC.authorizationportal.zip to Artifacts Release
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
+        run: |
+          gh release upload $env:RELEASE_TAG "AHS.GC.authorizationportal.zip" --repo $env:RELEASE_REPO --clobber
+
+      # --- Build & Upload Cloud Sub-APIs ---
+      - name: Build AHS.GC.Cloud subfolders
+        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
+        shell: pwsh
+        run: |
+          $cloudBase = "AHS.GC.Cloud"
+          $cloudSelection = '${{ github.event.inputs.cloudApi }}'
+          $cloudFolders = @()
+
+          if ($cloudSelection -ne 'all') {
+              $cloudFolders += "$cloudBase\$cloudSelection"
           } else {
-            echo "::set-output name=build::false"
+              $cloudFolders += Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
           }
 
-      - name: Checkout code
-        if: steps.should_build.outputs.build == 'true'
-        uses: actions/checkout@v4
+          foreach ($folder in $cloudFolders) {
+              $name = Split-Path $folder -Leaf
+              Write-Host "🔧 Building Cloud API: $name"
+              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse | Select-Object -First 1
+              if (-not $proj) {
+                  Write-Host "❌ No .csproj found in $name"
+                  continue
+              }
+              dotnet restore $proj.FullName
+              dotnet build $proj.FullName --configuration Release --no-restore
 
-      - name: Setup .NET
-        if: steps.should_build.outputs.build == 'true'
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
-
-      - name: Build Cloud API ${{ matrix.subapi }}
-        if: steps.should_build.outputs.build == 'true'
-        shell: pwsh
-        run: |
-          $folder = "AHS.GC.Cloud\\${{ matrix.subapi }}"
-          Write-Host "🔧 Building Cloud API: $folder"
-          $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $proj) { Write-Error "❌ No .csproj found in $folder"; exit 1 }
-          dotnet restore $proj.FullName
-          dotnet build $proj.FullName --configuration Release --no-restore
+              $zipName = "$name.zip"
+              Compress-Archive -Path "$folder/**/bin/Release/*" -DestinationPath $zipName
+              gh release upload $env:RELEASE_TAG $zipName --repo $env:RELEASE_REPO --clobber
+          }
