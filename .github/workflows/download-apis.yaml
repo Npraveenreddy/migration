@@ -38,21 +38,28 @@ jobs:
       GH_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
     steps:
-      - name: Create artifacts folder
-        shell: powershell
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📂 Create artifacts folder
+        shell: pwsh
         run: |
           $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
           if (-not (Test-Path $artifactsPath)) {
-            New-Item -Path $artifactsPath -ItemType Directory
+            New-Item -Path $artifactsPath -ItemType Directory | Out-Null
+            Write-Host "✅ Created artifacts folder at $artifactsPath"
+          } else {
+            Write-Host "ℹ️ Artifacts folder already exists: $artifactsPath"
           }
 
-      - name: Download and Save Artifacts as ZIP
-        shell: powershell
+      - name: 📥 Download Artifacts ZIPs
+        shell: pwsh
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
           $workspace = "$env:GITHUB_WORKSPACE"
           $artifactsPath = "$workspace\artifacts"
+
           $topLevelApis = @(
             "AHS.GC.Web",
             "AHS.GC.authorizationportal",
@@ -69,18 +76,20 @@ jobs:
             "member"
           )
 
+          echo $env:GH_TOKEN | gh auth login --with-token
+
           function DownloadZip($name) {
             $zipPath = "$artifactsPath\$name.zip"
-            echo $env:GH_TOKEN | gh auth login --with-token
             gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $artifactsPath --clobber
             if (Test-Path $zipPath) {
-              Write-Host "Downloaded $name.zip"
+              Write-Host "✅ Downloaded $name.zip"
             } else {
-              Write-Error "Failed to download $name.zip"
+              Write-Error "❌ Failed to download $name.zip"
               exit 1
             }
           }
 
+          # Top-level APIs
           if ($apiFolder -eq "all") {
             foreach ($api in $topLevelApis) {
               if ($api -ne "AHS.GC.Cloud") {
@@ -91,6 +100,7 @@ jobs:
             DownloadZip $apiFolder
           }
 
+          # Cloud sub-APIs
           if ($cloudApi -eq "all") {
             foreach ($sub in $cloudSubApis) {
               DownloadZip $sub
@@ -109,12 +119,12 @@ jobs:
       EC2_INSTANCE_ID: i-0409b449dd184132b
 
     steps:
-      - name: Deploy ZIPs to EC2 and Extract
-        shell: powershell
+      - name: 🚀 Deploy ZIPs to EC2 and Extract
+        shell: pwsh
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $artifactsPath = "C:\Devops\actions-runner\_work\migration\migration\artifacts"
+          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
           
           $topLevelApis = @(
             "AHS.GC.Web",
@@ -159,7 +169,7 @@ jobs:
           foreach ($name in $selectedApis) {
             $zipPath = "$artifactsPath\$name.zip"
             if (-not (Test-Path $zipPath)) {
-              Write-Host "Skipping $name — zip not found"
+              Write-Host "⚠️ Skipping $name — zip not found"
               continue
             }
           
@@ -169,12 +179,12 @@ jobs:
             $commands = @(
               "Copy-Item -Path `"$zipPath`" -Destination `"$remoteZipPath`" -Force",
               "Expand-Archive -Path `"$remoteZipPath`" -DestinationPath `"$extractPath`" -Force",
-              "Remove-Item -Path `"$remoteZipPath`""
+              "Remove-Item -Path `"$remoteZipPath`" -Force"
             )
           
             aws ssm send-command `
-              --document-name AWS-RunPowerShellScript `
-              --targets Key=instanceIds,Values=$env:EC2_INSTANCE_ID `
+              --document-name "AWS-RunPowerShellScript" `
+              --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
               --parameters @{ commands = $commands } `
               --region $env:AWS_REGION `
               --output text
