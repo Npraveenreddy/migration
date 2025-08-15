@@ -154,23 +154,24 @@ jobs:
           foreach ($name in $selectedApis) {
             $zipPath = "$artifactsPath\$name.zip"
             if (-not (Test-Path $zipPath)) {
-              Write-Host "Skipping $name — zip not found"
+              Write-Host "⚠️ Skipping $name — zip not found"
               continue
             }
           
             $remoteZipPath = "C:\temp\$name.zip"
             $extractPath = "C:\inetpub\wwwroot\Deployment\GITHUB\$($targetMap[$name])"
           
-            $commands = @(
-              "Copy-Item -Path `"$zipPath`" -Destination `"$remoteZipPath`" -Force",
-              "Expand-Archive -Path `"$remoteZipPath`" -DestinationPath `"$extractPath`" -Force",
-              "Remove-Item -Path `"$remoteZipPath`" -Force"
-            )
-          
+            # Use a here-string for clean multi-line commands
+            $scriptBlock = @"
+          Copy-Item -Path "$zipPath" -Destination "$remoteZipPath" -Force
+          Expand-Archive -Path "$remoteZipPath" -DestinationPath "$extractPath" -Force
+          Remove-Item -Path "$remoteZipPath" -Force
+          "@
+            
+            # Run SSM command
             aws ssm send-command `
               --document-name "AWS-RunPowerShellScript" `
-              --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
-              --parameters @{ commands = $commands } `
-              --region $env:AWS_REGION `
-              --output text
+              --targets Key=instanceIds,Values=$env:EC2_INSTANCE_ID `
+              --parameters commands="$scriptBlock" `
+              --region $env:AWS_REGION
           }
