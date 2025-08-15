@@ -191,6 +191,5 @@ jobs:
                 --parameters @{ commands = $ssmCommands } `
                 --region $env:AWS_REGION `
                 --output text
-
             }
           }
