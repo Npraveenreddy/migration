@@ -176,9 +176,9 @@ jobs:
               $content = Get-Content -Path $file.FullName -Raw
 
               $scriptLines = @()
-              $scriptLines += "\$content = @'"
+              $scriptLines += '$content = @'
               $scriptLines += $content
-              $scriptLines += "'@"
+              $scriptLines += '@'
               $scriptLines += "Set-Content -Path `"$destinationPath`" -Value \$content"
 
               $ssmFile = "$artifactsPath\ssm-script-$name.txt"
