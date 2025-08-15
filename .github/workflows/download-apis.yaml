@@ -43,18 +43,15 @@ jobs:
         run: |
           $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
           if (-not (Test-Path $artifactsPath)) {
-            New-Item -Path $artifactsPath -ItemType Directory
-          } else {
-            Write-Host "Artifacts folder already exists — skipping creation."
+            New-Item -Path $artifactsPath -ItemType Directory | Out-Null
           }
 
-      - name: Download and Save Artifacts as ZIP
+      - name: Download Artifacts
         shell: powershell
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $workspace = "$env:GITHUB_WORKSPACE"
-          $artifactsPath = "$workspace\artifacts"
+          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
 
           $topLevelApis = @(
             "AHS.GC.Web",
@@ -80,10 +77,7 @@ jobs:
               --pattern "$name.zip" `
               --dir $artifactsPath `
               --clobber
-
-            if (Test-Path $zipPath) {
-              Write-Host "Downloaded $name.zip"
-            } else {
+            if (!(Test-Path $zipPath)) {
               Write-Error "Failed to download $name.zip"
               exit 1
             }
@@ -112,36 +106,20 @@ jobs:
       SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
     steps:
-      - name: Deploy artifacts to EC2 via SSH
+      - name: Deploy to EC2
         shell: powershell
         run: |
-          $ARTIFACTS_DIR = "$env:GITHUB_WORKSPACE\artifacts"
-          $sshKeyPath = "ssh_key.pem"
+          $artifactsDir = "$env:GITHUB_WORKSPACE\artifacts"
+          $sshKeyPath = "$env:GITHUB_WORKSPACE\ssh_key.pem"
 
           # Save SSH key
           Set-Content -Path $sshKeyPath -Value $env:SSH_KEY
           icacls $sshKeyPath /inheritance:r /grant:r "$($env:USERNAME):(R)"
 
-          # Upload ZIPs to EC2
-          Write-Host "Uploading ZIP files to EC2..."
-          scp -i $sshKeyPath "$ARTIFACTS_DIR\*.zip" "$($env:EC2_USER)@$($env:EC2_HOST):/tmp/"
+          # Upload files
+          scp -i $sshKeyPath "$artifactsDir\*.zip" "$($env:EC2_USER)@$($env:EC2_HOST):/tmp/"
 
-          # Map ZIP names to deployment directories
-          $targetMap = @{
-            "AHS.GC.Web"              = "/var/www/Portal"
-            "AHS.GC.authorizationportal" = "/var/www/AuthorizationPortal"
-            "AHS.GC.ConfigAPI"        = "/var/www/CONFIGAPI"
-            "AHS.GC.SmartComm"        = "/var/www/SmartCommAPI"
-            "account"                 = "/var/www/CloudAPI"
-            "activity"                = "/var/www/CloudAPI"
-            "admin"                   = "/var/www/CloudAPI"
-            "assessments"             = "/var/www/CloudAPI"
-            "master"                  = "/var/www/CloudAPI"
-            "member"                  = "/var/www/CloudAPI"
-          }
-
-          # Remote extract and cleanup
-          Write-Host "Extracting and deploying on EC2..."
+          # Remote unzip and deploy
           $remoteScript = @'
           for zip in /tmp/*.zip; do
             name=$(basename "$zip" .zip)
