@@ -1,90 +1,121 @@
-name: Build and Release APIs
+name: Build APIs Manually
 
 on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'Top-level API folder to build (or "all")'
+        description: 'API folder to build (or "all" to build everything)'
         required: true
-        default: 'AHS.GC.Web'
+        default: 'all'
         type: choice
         options:
-          - AHS.GC.Web
-          - AHS.GC.Cloud
-          - SmartComm
-          - Config
-          - Common
-          - Integration
           - all
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
       cloudApi:
         description: 'Specific Cloud API to build (or "all")'
-        required: false
-        default: ''
+        required: true
+        default: 'all'
         type: choice
         options:
-          - ''
-          - account
-          - user
-          - notification
-          - billing
-          - reporting
-          - analytics
           - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
 
 jobs:
-  build-and-release:
+  build:
     runs-on: windows-latest
-
     env:
-      RELEASE_TAG: v8.17.2025.08_RC1  # You can make this dynamic if needed
+      RELEASE_REPO: Npraveenreddy/artifacts
+      RELEASE_TAG: v8.17.2025.08_RC1
+      DOTNET_ROOT: C:\Program Files\dotnet
+      GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
     steps:
-      - name: ⬇️ Checkout code
-        uses: actions/checkout@v3
+    - name: 📦 Checkout code
+      uses: actions/checkout@v4
 
-      - name: 🛠️ Build and Upload APIs
-        shell: pwsh
-        run: |
-          $apiFolder = "${{ github.event.inputs.apiFolder }}"
-          $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $workspace = "$env:GITHUB_WORKSPACE"
-          $releaseTag = $env:RELEASE_TAG
+    - name: 🛠️ Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '6.0.x'
 
-          # Detect all top-level folders
-          $topLevelApis = Get-ChildItem $workspace -Directory | Select-Object -ExpandProperty Name
+    - name: 🔧 Build Selected APIs and Upload Artifacts
+      shell: pwsh
+      run: |
+        $apiFolder = "${{ github.event.inputs.apiFolder }}"
+        $cloudApi = "${{ github.event.inputs.cloudApi }}"
+        $workspace = $env:GITHUB_WORKSPACE
+        $topLevelApis = @(
+          "AHS.GC.Web",
+          "AHS.GC.authorizationportal",
+          "AHS.GC.ConfigAPI",
+          "AHS.GC.SmartComm",
+          "AHS.GC.Cloud"
+        )
+        $cloudSubApis = @(
+          "account",
+          "activity",
+          "admin",
+          "assessments",
+          "master",
+          "member"
+        )
 
-          # Detect sub-APIs in AHS.GC.Cloud
-          $cloudSubApis = Get-ChildItem "$workspace\AHS.GC.Cloud" -Directory | Select-Object -ExpandProperty Name
-
-          function BuildAndUpload($path, $name) {
-              Write-Host "📁 Building: $path ($name)"
-              $zipPath = "$workspace\$name.zip"
-              Compress-Archive -Path "$workspace\$path\*" -DestinationPath $zipPath -Force
-              Write-Host "📦 Created ZIP: $zipPath"
-              gh release upload $releaseTag $zipPath --clobber
-              Write-Host "📤 Uploaded $name.zip to release $releaseTag"
+        function BuildAndUpload($path, $name) {
+          Write-Host "🔨 Building $name"
+          $proj = Get-ChildItem $path -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) {
+            Write-Error "❌ No .csproj found in $name"
+            exit 1
           }
+          dotnet restore $proj.FullName
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ Restore failed for $name"
+            exit 1
+          }
+          dotnet build $proj.FullName --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ Build failed for $name"
+            exit 1
+          }
+          $outputPath = Join-Path $path "bin\Release\net6.0"
+          $zipPath = "$workspace\$name.zip"
+          Write-Host "📦 Zipping contents of: $outputPath"
+          Compress-Archive -Path "$outputPath\*" -DestinationPath $zipPath
+          if (Test-Path $zipPath) {
+            echo $env:GITHUB_TOKEN | gh auth login --with-token
+            gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
+            Write-Host "✅ Uploaded $name.zip to release $env:RELEASE_TAG"
+          } else {
+            Write-Error "❌ ZIP not found for $name"
+            exit 1
+          }
+        }
 
-          # Build selected top-level folder (excluding AHS.GC.Cloud)
-          if ($apiFolder -eq "all") {
-              foreach ($folder in $topLevelApis) {
-                  if ($folder -ne "AHS.GC.Cloud") {
-                      BuildAndUpload $folder $folder
-                  }
-              }
+        # Build top-level APIs
+        if ($apiFolder -eq "all") {
+          foreach ($api in $topLevelApis) {
+            if ($api -ne "AHS.GC.Cloud") {
+              BuildAndUpload $api $api
+            }
           }
-          elseif ($apiFolder -ne "AHS.GC.Cloud") {
-              BuildAndUpload $apiFolder $apiFolder
-          }
+        } elseif ($apiFolder -ne "AHS.GC.Cloud") {
+          BuildAndUpload $apiFolder $apiFolder
+        }
 
-          # Build Cloud APIs if selected
-          if ($apiFolder -eq "all" -or $apiFolder -eq "AHS.GC.Cloud" -or $cloudApi -ne "") {
-              if ($cloudApi -eq "all") {
-                  foreach ($sub in $cloudSubApis) {
-                      BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
-                  }
-              }
-              elseif ($cloudApi -ne "") {
-                  BuildAndUpload "AHS.GC.Cloud\$cloudApi" "$cloudApi"
-              }
+        # Build Cloud APIs
+        if ($cloudApi -eq "all") {
+          foreach ($sub in $cloudSubApis) {
+            BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
           }
+        } elseif ($cloudApi -ne "") {
+          BuildAndUpload "AHS.GC.Cloud\$cloudApi" "$cloudApi"
+        }
