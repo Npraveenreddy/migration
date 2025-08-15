@@ -1,4 +1,4 @@
-name: Download and Deploy APIs to EC2
+name: Download and Deploy APIs to EC2 (PowerShell)
 
 on:
   workflow_dispatch:
@@ -39,53 +39,72 @@ jobs:
 
     steps:
       - name: Ensure artifacts folder exists
-        shell: bash
+        shell: pwsh
         run: |
-          ARTIFACTS_DIR="$GITHUB_WORKSPACE/artifacts"
-          mkdir -p "$ARTIFACTS_DIR"
-
-      - name: Download and Save Artifacts as ZIP
-        shell: bash
-        run: |
-          apiFolder="${{ github.event.inputs.apiFolder }}"
-          cloudApi="${{ github.event.inputs.cloudApi }}"
-          artifactsPath="$GITHUB_WORKSPACE/artifacts"
-
-          topLevelApis=("AHS.GC.Web" "AHS.GC.authorizationportal" "AHS.GC.ConfigAPI" "AHS.GC.SmartComm" "AHS.GC.Cloud")
-          cloudSubApis=("account" "activity" "admin" "assessments" "master" "member")
-
-          download_zip() {
-            name="$1"
-            zipPath="$artifactsPath/$name.zip"
-            echo "$GH_TOKEN" | gh auth login --with-token
-            gh release download "$RELEASE_TAG" \
-              --repo "$RELEASE_REPO" \
-              --pattern "$name.zip" \
-              --dir "$artifactsPath" \
-              --clobber
-            if [[ -f "$zipPath" ]]; then
-              echo "Downloaded $name.zip"
-            else
-              echo "Failed to download $name.zip"
-              exit 1
-            fi
+          $artifactsPath = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          if (-not (Test-Path $artifactsPath)) {
+              New-Item -Path $artifactsPath -ItemType Directory | Out-Null
+              Write-Host "Created artifacts folder."
+          } else {
+              Write-Host "Artifacts folder already exists — skipping creation."
           }
 
-          if [[ "$apiFolder" == "all" ]]; then
-            for api in "${topLevelApis[@]}"; do
-              [[ "$api" != "AHS.GC.Cloud" ]] && download_zip "$api"
-            done
-          elif [[ "$apiFolder" != "AHS.GC.Cloud" ]]; then
-            download_zip "$apiFolder"
-          fi
+      - name: Download Artifacts
+        shell: pwsh
+        run: |
+          $apiFolder = "${{ github.event.inputs.apiFolder }}"
+          $cloudApi  = "${{ github.event.inputs.cloudApi }}"
+          $artifactsPath = Join-Path $env:GITHUB_WORKSPACE "artifacts"
 
-          if [[ "$cloudApi" == "all" ]]; then
-            for sub in "${cloudSubApis[@]}"; do
-              download_zip "$sub"
-            done
-          elif [[ " ${cloudSubApis[*]} " == *" $cloudApi "* ]]; then
-            download_zip "$cloudApi"
-          fi
+          $topLevelApis = @(
+            "AHS.GC.Web",
+            "AHS.GC.authorizationportal",
+            "AHS.GC.ConfigAPI",
+            "AHS.GC.SmartComm",
+            "AHS.GC.Cloud"
+          )
+          $cloudSubApis = @(
+            "account",
+            "activity",
+            "admin",
+            "assessments",
+            "master",
+            "member"
+          )
+
+          function Download-Zip($name) {
+            $zipPath = Join-Path $artifactsPath "$name.zip"
+            echo $env:GH_TOKEN | gh auth login --with-token
+            gh release download $env:RELEASE_TAG `
+              --repo $env:RELEASE_REPO `
+              --pattern "$name.zip" `
+              --dir $artifactsPath `
+              --clobber
+            if (Test-Path $zipPath) {
+              Write-Host "Downloaded $name.zip"
+            } else {
+              Write-Error "Failed to download $name.zip"
+              exit 1
+            }
+          }
+
+          if ($apiFolder -eq "all") {
+            foreach ($api in $topLevelApis) {
+              if ($api -ne "AHS.GC.Cloud") {
+                Download-Zip $api
+              }
+            }
+          } elseif ($apiFolder -ne "AHS.GC.Cloud") {
+            Download-Zip $apiFolder
+          }
+
+          if ($cloudApi -eq "all") {
+            foreach ($sub in $cloudSubApis) {
+              Download-Zip $sub
+            }
+          } elseif ($cloudSubApis -contains $cloudApi) {
+            Download-Zip $cloudApi
+          }
 
   deploy:
     runs-on: self-hosted
@@ -97,35 +116,37 @@ jobs:
 
     steps:
       - name: Deploy to EC2 via SSH
-        shell: bash
+        shell: pwsh
         run: |
-          ARTIFACTS_DIR="$GITHUB_WORKSPACE/artifacts"
-          SSH_KEY_FILE="$GITHUB_WORKSPACE/ssh_key.pem"
+          $artifactsDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          $sshKeyFile = Join-Path $env:GITHUB_WORKSPACE "ssh_key.pem"
 
           # Save SSH key
-          echo "$SSH_KEY" > "$SSH_KEY_FILE"
-          chmod 600 "$SSH_KEY_FILE"
+          $env:SSH_KEY | Out-File -FilePath $sshKeyFile -Encoding ascii
+          icacls $sshKeyFile /inheritance:r /grant:r "$($env:USERNAME):(R)"
 
           # Ensure /tmp exists on EC2
-          ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "mkdir -p /tmp"
+          cmd /c "ssh -i `"$sshKeyFile`" -o StrictHostKeyChecking=no $env:EC2_USER@$env:EC2_HOST mkdir -p /tmp"
 
-          # Upload all zip files
-          scp -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$ARTIFACTS_DIR"/*.zip "$EC2_USER@$EC2_HOST:/tmp/"
+          # Upload all ZIP files
+          cmd /c "scp -i `"$sshKeyFile`" -o StrictHostKeyChecking=no `"$artifactsDir`\*.zip`" $env:EC2_USER@$env:EC2_HOST:/tmp/"
 
           # Extract & deploy
-          ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'EOF'
+          $deployCmd = @"
           for zip in /tmp/*.zip; do
-            name=$(basename "$zip" .zip)
-            case "$name" in
+            name=\$(basename "\$zip" .zip)
+            case "\$name" in
               "AHS.GC.Web") target="/var/www/Portal" ;;
               "AHS.GC.authorizationportal") target="/var/www/AuthorizationPortal" ;;
               "AHS.GC.ConfigAPI") target="/var/www/CONFIGAPI" ;;
               "AHS.GC.SmartComm") target="/var/www/SmartCommAPI" ;;
               "account"|"activity"|"admin"|"assessments"|"master"|"member") target="/var/www/CloudAPI" ;;
-              *) target="/var/www/$name" ;;
+              *) target="/var/www/\$name" ;;
             esac
-            mkdir -p "$target"
-            unzip -o "$zip" -d "$target"
-            rm -f "$zip"
+            mkdir -p "\$target"
+            unzip -o "\$zip" -d "\$target"
+            rm -f "\$zip"
           done
-          EOF
+          "@
+
+          cmd /c "ssh -i `"$sshKeyFile`" -o StrictHostKeyChecking=no $env:EC2_USER@$env:EC2_HOST bash -s" <<< $deployCmd
