@@ -35,7 +35,7 @@ jobs:
     env:
       RELEASE_TAG: v8.17.2025.08_RC1
       RELEASE_REPO: Npraveenreddy/artifacts
-      GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
+      GITHUB_TOKEN: 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
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
