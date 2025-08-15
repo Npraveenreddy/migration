@@ -38,8 +38,17 @@ jobs:
       GH_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
     steps:
-      - name: Create artifacts folder
-        run: mkdir -p artifacts
+      - name: Create artifacts folder if not exists
+        shell: powershell
+        run: |
+          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
+          if (-not (Test-Path $artifactsPath)) {
+            New-Item -Path $artifactsPath -ItemType Directory | Out-Null
+            Write-Host "Created artifacts folder at $artifactsPath"
+          }
+          else {
+            Write-Host "Artifacts folder already exists at $artifactsPath"
+          }
 
       - name: Download and Save Artifacts as ZIP
         run: |
