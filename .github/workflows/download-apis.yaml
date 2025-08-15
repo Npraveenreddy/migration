@@ -115,6 +115,7 @@ jobs:
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
           $artifactsPath = "C:\Devops\actions-runner\_work\migration\migration\artifacts"
+          
           $topLevelApis = @(
             "AHS.GC.Web",
             "AHS.GC.authorizationportal",
@@ -141,36 +142,36 @@ jobs:
             "master"                   = "CloudAPI"
             "member"                   = "CloudAPI"
           }
-
+          
           $selectedApis = @()
           if ($apiFolder -eq "all") {
             $selectedApis += $topLevelApis
           } elseif ($topLevelApis -contains $apiFolder) {
             $selectedApis += $apiFolder
           }
-
+          
           if ($cloudApi -eq "all") {
             $selectedApis += $cloudSubApis
           } elseif ($cloudSubApis -contains $cloudApi) {
             $selectedApis += $cloudApi
           }
-
+          
           foreach ($name in $selectedApis) {
             $zipPath = "$artifactsPath\$name.zip"
             if (-not (Test-Path $zipPath)) {
               Write-Host "Skipping $name — zip not found"
               continue
             }
-
+          
             $remoteZipPath = "C:\temp\$name.zip"
             $extractPath = "C:\inetpub\wwwroot\Deployment\GITHUB\$($targetMap[$name])"
-
+          
             $commands = @(
-              "Copy-Item -Path '$zipPath' -Destination '$remoteZipPath' -Force",
-              "Expand-Archive -Path '$remoteZipPath' -DestinationPath '$extractPath' -Force",
-              "Remove-Item -Path '$remoteZipPath'"
+              "Copy-Item -Path `"$zipPath`" -Destination `"$remoteZipPath`" -Force",
+              "Expand-Archive -Path `"$remoteZipPath`" -DestinationPath `"$extractPath`" -Force",
+              "Remove-Item -Path `"$remoteZipPath`""
             )
-
+          
             aws ssm send-command `
               --document-name AWS-RunPowerShellScript `
               --targets Key=instanceIds,Values=$env:EC2_INSTANCE_ID `
