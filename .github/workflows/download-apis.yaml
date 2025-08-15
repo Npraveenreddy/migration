@@ -39,155 +39,122 @@ jobs:
 
     steps:
       - name: Create artifacts folder
-        shell: powershell
-        run: |
-          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
-          if (-not (Test-Path $artifactsPath)) {
-            New-Item -Path $artifactsPath -ItemType Directory
-          }
+        run: mkdir -p artifacts
 
       - name: Download and Save Artifacts as ZIP
-        shell: powershell
         run: |
-          $apiFolder = "${{ github.event.inputs.apiFolder }}"
-          $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $workspace = "$env:GITHUB_WORKSPACE"
-          $artifactsPath = "$workspace\artifacts"
+          apiFolder="${{ github.event.inputs.apiFolder }}"
+          cloudApi="${{ github.event.inputs.cloudApi }}"
+          artifactsPath="$GITHUB_WORKSPACE/artifacts"
 
-          $topLevelApis = @(
-            "AHS.GC.Web",
-            "AHS.GC.authorizationportal",
-            "AHS.GC.ConfigAPI",
-            "AHS.GC.SmartComm",
+          topLevelApis=(
+            "AHS.GC.Web"
+            "AHS.GC.authorizationportal"
+            "AHS.GC.ConfigAPI"
+            "AHS.GC.SmartComm"
             "AHS.GC.Cloud"
           )
-          $cloudSubApis = @(
-            "account",
-            "activity",
-            "admin",
-            "assessments",
-            "master",
+          cloudSubApis=(
+            "account"
+            "activity"
+            "admin"
+            "assessments"
+            "master"
             "member"
           )
 
-          function DownloadZip($name) {
-            $zipPath = "$artifactsPath\$name.zip"
-            echo $env:GH_TOKEN | gh auth login --with-token
-            gh release download $env:RELEASE_TAG `
-              --repo $env:RELEASE_REPO `
-              --pattern "$name.zip" `
-              --dir $artifactsPath `
+          download_zip() {
+            zipPath="$artifactsPath/$1.zip"
+            echo "$GH_TOKEN" | gh auth login --with-token
+            gh release download "$RELEASE_TAG" \
+              --repo "$RELEASE_REPO" \
+              --pattern "$1.zip" \
+              --dir "$artifactsPath" \
               --clobber
-
-            if (Test-Path $zipPath) {
-              Write-Host "Downloaded $name.zip"
-            } else {
-              Write-Error "Failed to download $name.zip"
-              exit 1
-            }
+            if [[ -f "$zipPath" ]]; then
+              echo "Downloaded $1.zip"
+            else
+              echo "Failed to download $1.zip" && exit 1
+            fi
           }
 
-          if ($apiFolder -eq "all") {
-            foreach ($api in $topLevelApis) {
-              if ($api -ne "AHS.GC.Cloud") {
-                DownloadZip $api
-              }
-            }
-          }
-          elseif ($apiFolder -ne "AHS.GC.Cloud") {
-            DownloadZip $apiFolder
-          }
+          if [[ "$apiFolder" == "all" ]]; then
+            for api in "${topLevelApis[@]}"; do
+              if [[ "$api" != "AHS.GC.Cloud" ]]; then
+                download_zip "$api"
+              fi
+            done
+          elif [[ "$apiFolder" != "AHS.GC.Cloud" ]]; then
+            download_zip "$apiFolder"
+          fi
 
-          if ($cloudApi -eq "all") {
-            foreach ($sub in $cloudSubApis) {
-              DownloadZip $sub
-            }
-          }
-          elseif ($cloudSubApis -contains $cloudApi) {
-            DownloadZip $cloudApi
-          }
+          if [[ "$cloudApi" == "all" ]]; then
+            for sub in "${cloudSubApis[@]}"; do
+              download_zip "$sub"
+            done
+          elif [[ " ${cloudSubApis[*]} " == *" $cloudApi "* ]]; then
+            download_zip "$cloudApi"
+          fi
 
   deploy-to-ec2:
     runs-on: self-hosted
     needs: download
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: us-east-1
-      EC2_INSTANCE_ID: i-0409b449dd184132b
+      EC2_USER: praveen
+      EC2_HOST: 54.159.202.137
+      SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
     steps:
-      - name: Deploy ZIPs to EC2 and Extract
-        shell: powershell
+      - name: Install SSH key
         run: |
-          $apiFolder = "${{ github.event.inputs.apiFolder }}"
-          $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $artifactsPath = "C:\Devops\actions-runner\_work\migration\migration\artifacts"
+          echo "$SSH_KEY" > private_key.pem
+          chmod 600 private_key.pem
 
-          $topLevelApis = @(
-            "AHS.GC.Web",
-            "AHS.GC.authorizationportal",
-            "AHS.GC.ConfigAPI",
-            "AHS.GC.SmartComm"
+      - name: Deploy ZIPs to EC2
+        run: |
+          apiFolder="${{ github.event.inputs.apiFolder }}"
+          cloudApi="${{ github.event.inputs.cloudApi }}"
+          artifactsPath="$GITHUB_WORKSPACE/artifacts"
+
+          declare -A targetMap=(
+            ["AHS.GC.Web"]="Portal"
+            ["AHS.GC.authorizationportal"]="AuthorizationPortal"
+            ["AHS.GC.ConfigAPI"]="CONFIGAPI"
+            ["AHS.GC.SmartComm"]="SmartCommAPI"
+            ["account"]="CloudAPI"
+            ["activity"]="CloudAPI"
+            ["admin"]="CloudAPI"
+            ["assessments"]="CloudAPI"
+            ["master"]="CloudAPI"
+            ["member"]="CloudAPI"
           )
-          $cloudSubApis = @(
-            "account",
-            "activity",
-            "admin",
-            "assessments",
-            "master",
-            "member"
-          )
 
-          $targetMap = @{
-            "AHS.GC.Web"             = "Portal"
-            "AHS.GC.authorizationportal" = "AuthorizationPortal"
-            "AHS.GC.ConfigAPI"       = "CONFIGAPI"
-            "AHS.GC.SmartComm"       = "SmartCommAPI"
-            "account"                = "CloudAPI"
-            "activity"               = "CloudAPI"
-            "admin"                  = "CloudAPI"
-            "assessments"            = "CloudAPI"
-            "master"                 = "CloudAPI"
-            "member"                 = "CloudAPI"
-          }
+          topLevelApis=( "AHS.GC.Web" "AHS.GC.authorizationportal" "AHS.GC.ConfigAPI" "AHS.GC.SmartComm" )
+          cloudSubApis=( "account" "activity" "admin" "assessments" "master" "member" )
 
-          $selectedApis = @()
+          selectedApis=()
+          if [[ "$apiFolder" == "all" ]]; then
+            selectedApis+=("${topLevelApis[@]}")
+          elif [[ " ${topLevelApis[*]} " == *" $apiFolder "* ]]; then
+            selectedApis+=("$apiFolder")
+          fi
 
-          if ($apiFolder -eq "all") {
-            $selectedApis += $topLevelApis
-          }
-          elseif ($topLevelApis -contains $apiFolder) {
-            $selectedApis += $apiFolder
-          }
+          if [[ "$cloudApi" == "all" ]]; then
+            selectedApis+=("${cloudSubApis[@]}")
+          elif [[ " ${cloudSubApis[*]} " == *" $cloudApi "* ]]; then
+            selectedApis+=("$cloudApi")
+          fi
 
-          if ($cloudApi -eq "all") {
-            $selectedApis += $cloudSubApis
-          }
-          elseif ($cloudSubApis -contains $cloudApi) {
-            $selectedApis += $cloudApi
-          }
-
-          foreach ($name in $selectedApis) {
-            $zipPath = "$artifactsPath\$name.zip"
-            if (-not (Test-Path $zipPath)) {
-              Write-Host "Skipping $name — zip not found"
+          for name in "${selectedApis[@]}"; do
+            zipPath="$artifactsPath/$name.zip"
+            if [[ ! -f "$zipPath" ]]; then
+              echo "Skipping $name — zip not found"
               continue
-            }
+            fi
 
-            $remoteZipPath = "C:\temp\$name.zip"
-            $extractPath = "C:\inetpub\wwwroot\Deployment\GITHUB\$($targetMap[$name])"
+            remoteZip="/tmp/$name.zip"
+            extractPath="/var/www/${targetMap[$name]}"
 
-            $commands = @(
-              "Copy-Item -Path `"$zipPath`" -Destination `"$remoteZipPath`" -Force",
-              "Expand-Archive -Path `"$remoteZipPath`" -DestinationPath `"$extractPath`" -Force",
-              "Remove-Item -Path `"$remoteZipPath`" -Force"
-            )
-
-            aws ssm send-command `
-              --document-name "AWS-RunPowerShellScript" `
-              --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
-              --parameters @{ commands = $commands } `
-              --region $env:AWS_REGION `
-              --output text
-          }
+            scp -i private_key.pem "$zipPath" "$EC2_USER@$EC2_HOST:$remoteZip"
+            ssh -i private_key.pem "$EC2_USER@$EC2_HOST" "sudo mkdir -p '$extractPath' && sudo unzip -o '$remoteZip' -d '$extractPath' && rm -f '$remoteZip'"
+          done
