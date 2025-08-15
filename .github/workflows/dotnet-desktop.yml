@@ -32,6 +32,7 @@ on:
 jobs:
   build-api:
     runs-on: windows-latest
+    if: ${{ github.event.inputs.apiFolder != 'AHS.GC.Cloud' }}
     strategy:
       matrix:
         include:
@@ -73,47 +74,48 @@ jobs:
           dotnet build $proj.FullName --configuration Release --no-restore
 
   build-cloud:
-    if: ${{ github.event.inputs.apiFolder == 'AHS.GC.Cloud' || github.event.inputs.apiFolder == 'all' }}
     runs-on: windows-latest
-    name: Build AHS.GC.Cloud subfolders
+    if: ${{ github.event.inputs.apiFolder == 'AHS.GC.Cloud' || github.event.inputs.apiFolder == 'all' }}
+    strategy:
+      matrix:
+        include:
+          - subapi: account
+          - subapi: activity
+          - subapi: admin
+          - subapi: assessments
+          - subapi: master
+          - subapi: member
+    name: Build Cloud API ${{ matrix.subapi }}
     steps:
+      - name: Check if this Cloud API should be built
+        id: should_build
+        shell: pwsh
+        run: |
+          $input = '${{ github.event.inputs.cloudApi }}'
+          $subapi = '${{ matrix.subapi }}'
+          if ($input -eq 'all' -or $input -eq $subapi) {
+            echo "::set-output name=build::true"
+          } else {
+            echo "::set-output name=build::false"
+          }
+
       - name: Checkout code
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
 
-      - name: Build Cloud APIs
+      - name: Build Cloud API ${{ matrix.subapi }}
+        if: steps.should_build.outputs.build == 'true'
         shell: pwsh
         run: |
-          $cloudBase = "AHS.GC.Cloud"
-          $failedBuilds = @()
-          $cloudSelection = '${{ github.event.inputs.cloudApi }}'
-
-          if ($cloudSelection -and $cloudSelection -ne 'all') {
-              $cloudFolders = @("$cloudBase\$cloudSelection")
-          } else {
-              $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
-          }
-
-          foreach ($folder in $cloudFolders) {
-              $name = Split-Path $folder -Leaf
-              Write-Host "🔧 Building Cloud API: $name"
-              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($proj) {
-                  dotnet restore $proj.FullName
-                  if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
-                  dotnet build $proj.FullName --configuration Release --no-restore
-                  if ($LASTEXITCODE -ne 0) { $failedBuilds += $name }
-              } else {
-                  Write-Host "❌ No .csproj found in $name"
-                  $failedBuilds += $name
-              }
-          }
-
-          if ($failedBuilds.Count -gt 0) {
-              Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
-              exit 1
-          }
+          $folder = "AHS.GC.Cloud\\${{ matrix.subapi }}"
+          Write-Host "🔧 Building Cloud API: $folder"
+          $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) { Write-Error "❌ No .csproj found in $folder"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
