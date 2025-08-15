@@ -46,7 +46,7 @@ jobs:
             New-Item -Path $artifactsPath -ItemType Directory
           }
 
-      - name: Download and Extract Artifacts
+      - name: Download and Save Artifacts as ZIP
         shell: powershell
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
@@ -69,17 +69,12 @@ jobs:
             "member"
           )
 
-          function DownloadAndExtract($name) {
+          function DownloadZip($name) {
             $zipPath = "$artifactsPath\$name.zip"
-            $extractPath = "$artifactsPath\$name"
-
             echo $env:GH_TOKEN | gh auth login --with-token
             gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $artifactsPath --clobber
-
             if (Test-Path $zipPath) {
-              Write-Host "Extracting $name.zip to $extractPath"
-              Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-              Write-Host "Extracted $name"
+              Write-Host "Downloaded $name.zip"
             } else {
               Write-Error "Failed to download $name.zip"
               exit 1
@@ -89,19 +84,19 @@ jobs:
           if ($apiFolder -eq "all") {
             foreach ($api in $topLevelApis) {
               if ($api -ne "AHS.GC.Cloud") {
-                DownloadAndExtract $api
+                DownloadZip $api
               }
             }
           } elseif ($apiFolder -ne "AHS.GC.Cloud") {
-            DownloadAndExtract $apiFolder
+            DownloadZip $apiFolder
           }
 
           if ($cloudApi -eq "all") {
             foreach ($sub in $cloudSubApis) {
-              DownloadAndExtract $sub
+              DownloadZip $sub
             }
           } elseif ($cloudSubApis -contains $cloudApi) {
-            DownloadAndExtract $cloudApi
+            DownloadZip $cloudApi
           }
 
   deploy-to-ec2:
@@ -114,13 +109,12 @@ jobs:
       EC2_INSTANCE_ID: i-0409b449dd184132b
 
     steps:
-      - name: Deploy Extracted APIs to EC2
+      - name: Deploy ZIPs to EC2 and Extract
         shell: powershell
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $workspace = "$env:GITHUB_WORKSPACE"
-          $artifactsPath = "$workspace\artifacts"
+          $artifactsPath = "C:\Devops\actions-runner\_work\migration\migration\artifacts"
           $topLevelApis = @(
             "AHS.GC.Web",
             "AHS.GC.authorizationportal",
@@ -149,13 +143,11 @@ jobs:
           }
 
           $selectedApis = @()
-
           if ($apiFolder -eq "all") {
             $selectedApis += $topLevelApis
           } elseif ($topLevelApis -contains $apiFolder) {
             $selectedApis += $apiFolder
           }
-
           if ($cloudApi -eq "all") {
             $selectedApis += $cloudSubApis
           } elseif ($cloudSubApis -contains $cloudApi) {
@@ -163,33 +155,29 @@ jobs:
           }
 
           foreach ($name in $selectedApis) {
-            $sourcePath = "$artifactsPath\$name"
-            if (-not (Test-Path $sourcePath)) {
-              Write-Host "Skipping $name — no extracted folder found"
+            $zipPath = "$artifactsPath\$name.zip"
+            if (-not (Test-Path $zipPath)) {
+              Write-Host "Skipping $name — zip not found"
               continue
             }
 
-            $files = Get-ChildItem -Path $sourcePath -Recurse | Where-Object { -not $_.PSIsContainer }
-            foreach ($file in $files) {
-              $relativePath = $file.FullName.Substring($sourcePath.Length + 1)
-              $destinationPath = "C:\\inetpub\\wwwroot\\Deployment\\GITHUB\\$($targetMap[$name])\\$relativePath"
-              $content = Get-Content -Path $file.FullName -Raw
+            $remoteZipPath = "C:\temp\$name.zip"
+            $extractPath = "C:\inetpub\wwwroot\Deployment\GITHUB\$($targetMap[$name])"
 
-              $scriptLines = @()
-              $scriptLines += '$content = @'
-              $scriptLines += $content
-              $scriptLines += '@'
-              $scriptLines += "Set-Content -Path `"$destinationPath`" -Value \$content"
+            $commands = @"
+          Copy-Item -Path '$zipPath' -Destination '$remoteZipPath' -Force
+          Expand-Archive -Path '$remoteZipPath' -DestinationPath '$extractPath' -Force
+          Remove-Item -Path '$remoteZipPath'
+          "@
 
-              $ssmFile = "$artifactsPath\ssm-script-$name.txt"
-              $scriptLines | Out-File -FilePath $ssmFile -Encoding UTF8
+            $ssmFile = "$artifactsPath\ssm-script-$name.txt"
+            $commands | Out-File -FilePath $ssmFile -Encoding UTF8
 
-              $ssmCommands = Get-Content -Path $ssmFile
-              aws ssm send-command `
-                --document-name "AWS-RunPowerShellScript" `
-                --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
-                --parameters @{ commands = $ssmCommands } `
-                --region $env:AWS_REGION `
-                --output text
-            }
+            $ssmCommands = Get-Content -Path $ssmFile
+            aws ssm send-command `
+              --document-name "AWS-RunPowerShellScript" `
+              --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
+              --parameters @{ commands = $ssmCommands } `
+              --region $env:AWS_REGION `
+              --output text
           }
