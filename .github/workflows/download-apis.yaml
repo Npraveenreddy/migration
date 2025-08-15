@@ -1,4 +1,4 @@
-name: Download and Deploy APIs to EC2
+name: Download and Deploy APIs to EC2 (Self-Hosted)
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ on:
 
 jobs:
   download:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
       RELEASE_TAG: v8.17.2025.08_RC1
@@ -83,7 +83,7 @@ jobs:
           fi
 
   deploy-to-ec2:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: download
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
