@@ -36,6 +36,7 @@ jobs:
       RELEASE_REPO: Npraveenreddy/artifacts
       RELEASE_TAG: v8.17.2025.08_RC1
       DOTNET_ROOT: C:\Program Files\dotnet
+      GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}  # ✅ Use your custom PAT here
 
     steps:
     - name: 📦 Checkout code
@@ -48,8 +49,6 @@ jobs:
 
     - name: 🔧 Build Selected APIs and Upload Artifacts
       shell: pwsh
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         $apiFolder = "${{ github.event.inputs.apiFolder }}"
         $cloudApi = "${{ github.event.inputs.cloudApi }}"
@@ -99,6 +98,7 @@ jobs:
           Compress-Archive -Path "$outputPath\*" -DestinationPath $zipPath
 
           if (Test-Path $zipPath) {
+            gh auth login --with-token < $env:GITHUB_TOKEN  # ✅ Explicitly authenticate
             gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
             Write-Host "✅ Uploaded $name.zip to release $env:RELEASE_TAG"
           } else {
