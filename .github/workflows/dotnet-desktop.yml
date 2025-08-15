@@ -1,27 +1,103 @@
-name: Create Folder on EC2
+name: Build APIs Manually
 
 on:
-  push:
-    branches:
-      - main  # Change to your target branch
+  workflow_dispatch:
+    inputs:
+      apiFolder:
+        description: 'API folder to build (or "all" to build everything)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
+          - AHS.GC.Cloud
+      cloudApi:
+        description: 'Specific Cloud API to build (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
 
 jobs:
-  create-folder:
-    runs-on: ubuntu-latest
-
+  build-api:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        api: [AHS.GC.Web, AHS.GC.authorizationportal, AHS.GC.ConfigAPI, AHS.GC.SmartComm]
+    # Only run if apiFolder is 'all' or matches the current matrix.api
+    if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == matrix.api }}
+    name: Build ${{ matrix.api }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: AKIAVOYM5ISP6YADYGXO
-          aws-secret-access-key: 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
-          aws-region: us-east-1
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Create folder on EC2 via SSM
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build ${{ matrix.api }}
+        shell: pwsh
         run: |
-          aws ssm send-command \
-            --document-name "AWS-RunPowerShellScript" \
-            --targets Key=instanceIds,Values=i-0409b449dd184132b \
-            --comment "Create folder on C drive" \
-            --parameters "commands=[\"New-Item -Path 'C:\\praveen' -ItemType Directory\"]" \
-            --output text
+          Write-Host "🔧 Building ${{ matrix.api }}"
+          $proj = Get-ChildItem "${{ matrix.api }}" -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $proj) { Write-Error "❌ No .csproj found in ${{ matrix.api }}"; exit 1 }
+          dotnet restore $proj.FullName
+          dotnet build $proj.FullName --configuration Release --no-restore
+
+  build-cloud:
+    if: ${{ github.event.inputs.apiFolder == 'AHS.GC.Cloud' || github.event.inputs.apiFolder == 'all' }}
+    runs-on: windows-latest
+    name: Build AHS.GC.Cloud subfolders
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build Cloud APIs
+        shell: pwsh
+        run: |
+          $cloudBase = "AHS.GC.Cloud"
+          $failedBuilds = @()
+          $cloudSelection = '${{ github.event.inputs.cloudApi }}'
+
+          if ($cloudSelection -and $cloudSelection -ne 'all') {
+              $cloudFolders = @("$cloudBase\$cloudSelection")
+          } else {
+              $cloudFolders = Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
+          }
+
+          foreach ($folder in $cloudFolders) {
+              $name = Split-Path $folder -Leaf
+              Write-Host "🔧 Building Cloud API: $name"
+              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($proj) {
+                  dotnet restore $proj.FullName
+                  if ($LASTEXITCODE -ne 0) { $failedBuilds += $name; continue }
+                  dotnet build $proj.FullName --configuration Release --no-restore
+                  if ($LASTEXITCODE -ne 0) { $failedBuilds += $name }
+              } else {
+                  Write-Host "❌ No .csproj found in $name"
+                  $failedBuilds += $name
+              }
+          }
+
+          if ($failedBuilds.Count -gt 0) {
+              Write-Error "Cloud build failed for: $($failedBuilds -join ', ')"
+              exit 1
+          }
