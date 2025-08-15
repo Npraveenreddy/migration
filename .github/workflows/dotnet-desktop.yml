@@ -92,8 +92,11 @@ jobs:
             exit 1
           }
 
+          $outputPath = Join-Path $path "bin\Release\net6.0"
           $zipPath = "$workspace\$name.zip"
-          Compress-Archive -Path "$path/**/bin/Release/*" -DestinationPath $zipPath
+
+          Write-Host "📦 Zipping contents of: $outputPath"
+          Compress-Archive -Path "$outputPath\*" -DestinationPath $zipPath
 
           if (Test-Path $zipPath) {
             gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
