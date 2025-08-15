@@ -68,10 +68,20 @@ jobs:
             $extractPath = "$workspace\extracted\$name"
             echo $env:GH_TOKEN | gh auth login --with-token
             gh release download $env:RELEASE_TAG --repo $env:RELEASE_REPO --pattern "$name.zip" --dir $workspace
+
             if (Test-Path $zipPath) {
               Write-Host "📂 Extracting $name.zip to $extractPath"
               Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
               Write-Host "✅ Extracted $name"
+
+              if (Test-Path $extractPath) {
+                Write-Host "📁 Contents of $extractPath:"
+                Get-ChildItem -Path $extractPath -Recurse | ForEach-Object {
+                  Write-Host "  - $_"
+                }
+              } else {
+                Write-Error "❌ Folder missing: $extractPath"
+              }
             } else {
               Write-Error "❌ Failed to download $name.zip"
               exit 1
