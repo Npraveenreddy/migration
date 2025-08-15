@@ -38,64 +38,54 @@ jobs:
       GH_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
     steps:
-      - name: Create artifacts folder if not exists
-        shell: powershell
+      - name: Ensure artifacts folder exists
+        shell: bash
         run: |
-          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
-          if (-not (Test-Path $artifactsPath)) {
-            New-Item -Path $artifactsPath -ItemType Directory | Out-Null
-          }
+          ARTIFACTS_DIR="$GITHUB_WORKSPACE/artifacts"
+          mkdir -p "$ARTIFACTS_DIR"
 
-      - name: Download Artifacts
-        shell: powershell
+      - name: Download and Save Artifacts as ZIP
+        shell: bash
         run: |
-          $apiFolder = "${{ github.event.inputs.apiFolder }}"
-          $cloudApi = "${{ github.event.inputs.cloudApi }}"
-          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
+          apiFolder="${{ github.event.inputs.apiFolder }}"
+          cloudApi="${{ github.event.inputs.cloudApi }}"
+          artifactsPath="$GITHUB_WORKSPACE/artifacts"
 
-          $topLevelApis = @(
-            "AHS.GC.Web",
-            "AHS.GC.authorizationportal",
-            "AHS.GC.ConfigAPI",
-            "AHS.GC.SmartComm",
-            "AHS.GC.Cloud"
-          )
-          $cloudSubApis = @(
-            "account",
-            "activity",
-            "admin",
-            "assessments",
-            "master",
-            "member"
-          )
+          topLevelApis=("AHS.GC.Web" "AHS.GC.authorizationportal" "AHS.GC.ConfigAPI" "AHS.GC.SmartComm" "AHS.GC.Cloud")
+          cloudSubApis=("account" "activity" "admin" "assessments" "master" "member")
 
-          function DownloadZip($name) {
-            $zipPath = "$artifactsPath\$name.zip"
-            echo $env:GH_TOKEN | gh auth login --with-token
-            gh release download $env:RELEASE_TAG `
-              --repo $env:RELEASE_REPO `
-              --pattern "$name.zip" `
-              --dir $artifactsPath `
+          download_zip() {
+            name="$1"
+            zipPath="$artifactsPath/$name.zip"
+            echo "$GH_TOKEN" | gh auth login --with-token
+            gh release download "$RELEASE_TAG" \
+              --repo "$RELEASE_REPO" \
+              --pattern "$name.zip" \
+              --dir "$artifactsPath" \
               --clobber
-            if (!(Test-Path $zipPath)) {
-              Write-Error "Failed to download $name.zip"
+            if [[ -f "$zipPath" ]]; then
+              echo "Downloaded $name.zip"
+            else
+              echo "Failed to download $name.zip"
               exit 1
-            }
+            fi
           }
 
-          if ($apiFolder -eq "all") {
-            foreach ($api in $topLevelApis) {
-              if ($api -ne "AHS.GC.Cloud") { DownloadZip $api }
-            }
-          } elseif ($apiFolder -ne "AHS.GC.Cloud") {
-            DownloadZip $apiFolder
-          }
+          if [[ "$apiFolder" == "all" ]]; then
+            for api in "${topLevelApis[@]}"; do
+              [[ "$api" != "AHS.GC.Cloud" ]] && download_zip "$api"
+            done
+          elif [[ "$apiFolder" != "AHS.GC.Cloud" ]]; then
+            download_zip "$apiFolder"
+          fi
 
-          if ($cloudApi -eq "all") {
-            foreach ($sub in $cloudSubApis) { DownloadZip $sub }
-          } elseif ($cloudSubApis -contains $cloudApi) {
-            DownloadZip $cloudApi
-          }
+          if [[ "$cloudApi" == "all" ]]; then
+            for sub in "${cloudSubApis[@]}"; do
+              download_zip "$sub"
+            done
+          elif [[ " ${cloudSubApis[*]} " == *" $cloudApi "* ]]; then
+            download_zip "$cloudApi"
+          fi
 
   deploy:
     runs-on: self-hosted
@@ -106,21 +96,24 @@ jobs:
       SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
     steps:
-      - name: Deploy to EC2
-        shell: powershell
+      - name: Deploy to EC2 via SSH
+        shell: bash
         run: |
-          $artifactsDir = "$env:GITHUB_WORKSPACE\artifacts"
-          $sshKeyPath = "$env:GITHUB_WORKSPACE\ssh_key.pem"
+          ARTIFACTS_DIR="$GITHUB_WORKSPACE/artifacts"
+          SSH_KEY_FILE="$GITHUB_WORKSPACE/ssh_key.pem"
 
           # Save SSH key
-          Set-Content -Path $sshKeyPath -Value $env:SSH_KEY
-          icacls $sshKeyPath /inheritance:r /grant:r "$($env:USERNAME):(R)"
+          echo "$SSH_KEY" > "$SSH_KEY_FILE"
+          chmod 600 "$SSH_KEY_FILE"
 
-          # Upload files
-          scp -i $sshKeyPath "$artifactsDir\*.zip" "$($env:EC2_USER)@$($env:EC2_HOST):/tmp/"
+          # Ensure /tmp exists on EC2
+          ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "mkdir -p /tmp"
 
-          # Remote unzip and deploy
-          $remoteScript = @'
+          # Upload all zip files
+          scp -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$ARTIFACTS_DIR"/*.zip "$EC2_USER@$EC2_HOST:/tmp/"
+
+          # Extract & deploy
+          ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'EOF'
           for zip in /tmp/*.zip; do
             name=$(basename "$zip" .zip)
             case "$name" in
@@ -135,5 +128,4 @@ jobs:
             unzip -o "$zip" -d "$target"
             rm -f "$zip"
           done
-          '@
-          ssh -i $sshKeyPath "$($env:EC2_USER)@$($env:EC2_HOST)" $remoteScript
+          EOF
