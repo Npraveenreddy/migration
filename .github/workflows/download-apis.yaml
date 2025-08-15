@@ -164,20 +164,15 @@ jobs:
             $remoteZipPath = "C:\temp\$name.zip"
             $extractPath = "C:\inetpub\wwwroot\Deployment\GITHUB\$($targetMap[$name])"
 
-            $commands = @"
-          Copy-Item -Path '$zipPath' -Destination '$remoteZipPath' -Force
-          Expand-Archive -Path '$remoteZipPath' -DestinationPath '$extractPath' -Force
-          Remove-Item -Path '$remoteZipPath'
-          "@
+            $commands = @()
+            $commands += "Copy-Item -Path '$zipPath' -Destination '$remoteZipPath' -Force"
+            $commands += "Expand-Archive -Path '$remoteZipPath' -DestinationPath '$extractPath' -Force"
+            $commands += "Remove-Item -Path '$remoteZipPath'"
 
-            $ssmFile = "$artifactsPath\ssm-script-$name.txt"
-            $commands | Out-File -FilePath $ssmFile -Encoding UTF8
-
-            $ssmCommands = Get-Content -Path $ssmFile
             aws ssm send-command `
               --document-name "AWS-RunPowerShellScript" `
-              --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" `
-              --parameters @{ commands = $ssmCommands } `
+              --targets "Key=instanceIds,Values=$($env:EC2_INSTANCE_ID)" `
+              --parameters @{ commands = $commands } `
               --region $env:AWS_REGION `
               --output text
           }
