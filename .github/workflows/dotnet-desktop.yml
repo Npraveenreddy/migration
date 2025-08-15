@@ -4,31 +4,38 @@ on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'API folder to build (AHS.GC.Web, AHS.GC.Cloud, or all)'
+        description: 'Top-level API folder to build (or "all")'
         required: true
         default: 'AHS.GC.Web'
         type: choice
         options:
           - AHS.GC.Web
+          - AHS.GC.authorizationportal
+          - AHS.GC.ConfigAPI
+          - AHS.GC.SmartComm
           - AHS.GC.Cloud
           - all
       cloudApi:
-        description: 'Specific Cloud API to build (account, user, all, or leave blank)'
+        description: 'Specific Cloud API to build (or "all")'
         required: false
         default: ''
         type: choice
         options:
           - ''
-          - account
-          - user
           - all
+          - account
+          - activity
+          - admin
+          - assessments
+          - master
+          - member
 
 jobs:
   build-and-release:
     runs-on: windows-latest
 
     env:
-      RELEASE_TAG: v1.0.0  # You can make this dynamic if needed
+      RELEASE_TAG: v1.0.0
 
     steps:
       - name: ⬇️ Checkout code
@@ -47,10 +54,14 @@ jobs:
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi = "${{ github.event.inputs.cloudApi }}"
-
           $workspace = "$env:GITHUB_WORKSPACE"
           $releaseTag = $env:RELEASE_TAG
-          $cloudSubApis = @("account", "user", "notification")  # Add more as needed
+
+          # Detect all top-level folders
+          $topLevelApis = Get-ChildItem $workspace -Directory | Select-Object -ExpandProperty Name
+
+          # Detect sub-APIs in AHS.GC.Cloud
+          $cloudSubApis = Get-ChildItem "$workspace\AHS.GC.Cloud" -Directory | Select-Object -ExpandProperty Name
 
           function BuildAndUpload($path, $name) {
               Write-Host "📁 Building: $path ($name)"
@@ -62,24 +73,29 @@ jobs:
           }
 
           if ($apiFolder -eq "all") {
-              BuildAndUpload "AHS.GC.Web" "AHS.GC.Web"
-              foreach ($sub in $cloudSubApis) {
-                  BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
-              }
-          }
-          else {
-              if ($apiFolder -eq "AHS.GC.Web") {
-                  BuildAndUpload "AHS.GC.Web" "AHS.GC.Web"
-              }
-
-              if ($cloudApi -ne "") {
-                  if ($cloudApi -eq "all") {
+              foreach ($folder in $topLevelApis) {
+                  if ($folder -eq "AHS.GC.Cloud") {
                       foreach ($sub in $cloudSubApis) {
                           BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
                       }
                   }
                   else {
+                      BuildAndUpload $folder $folder
+                  }
+              }
+          }
+          else {
+              if ($apiFolder -eq "AHS.GC.Cloud") {
+                  if ($cloudApi -eq "all") {
+                      foreach ($sub in $cloudSubApis) {
+                          BuildAndUpload "AHS.GC.Cloud\$sub" "$sub"
+                      }
+                  }
+                  elseif ($cloudApi -ne "") {
                       BuildAndUpload "AHS.GC.Cloud\$cloudApi" "$cloudApi"
                   }
+              }
+              else {
+                  BuildAndUpload $apiFolder $apiFolder
               }
           }
