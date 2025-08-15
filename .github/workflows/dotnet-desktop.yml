@@ -1,113 +1,64 @@
-name: Build APIs Manually
+name: Release AHS APIs
 
 on:
   workflow_dispatch:
     inputs:
-      apiFolder:
-        description: 'API folder to build (or "all" to build everything)'
+      target:
+        description: 'Which APIs to release? (comma-separated or "all")'
         required: true
         default: 'all'
-        type: choice
-        options:
-          - all
-          - AHS.GC.Web
-          - AHS.GC.authorizationportal
-          - AHS.GC.ConfigAPI
-          - AHS.GC.SmartComm
-          - AHS.GC.Cloud
-      cloudApi:
-        description: 'Specific Cloud API to build (or "all")'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - account
-          - activity
-          - admin
-          - assessments
-          - master
-          - member
 
 jobs:
-  build:
+  release:
     runs-on: windows-latest
     env:
-      RELEASE_TAG: v8.17.2025.08_RC1
+      DOTNET_ROOT: C:\Program Files\dotnet
       RELEASE_REPO: Npraveenreddy/artifacts
-      GITHUB_TOKEN: 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
+      RELEASE_TAG: v8.17.2025.08_RC1
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: 📦 Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
+    - name: 🛠️ Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
 
-      - name: Install GitHub CLI
-        run: |
-          choco install gh -y
+    - name: 🔧 Build and Upload Selected APIs
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        $allApis = @("AHS.GC.Web", "AHS.GC.Auth", "AHS.GC.Admin")  # 👈 Add all available APIs here
+        $input = "${{ github.event.inputs.target }}"
 
-      # --- Build & Upload AHS.GC.Web ---
-      - name: Build AHS.GC.Web
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
-        shell: pwsh
-        run: |
-          $proj = Get-ChildItem "AHS.GC.Web" -Filter "*.csproj" -Recurse | Select-Object -First 1
-          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.Web"; exit 1 }
-          dotnet restore $proj.FullName
-          dotnet build $proj.FullName --configuration Release --no-restore
-          Compress-Archive -Path "AHS.GC.Web/**/bin/Release/*" -DestinationPath "AHS.GC.Web.zip"
+        if ($input -eq "all") {
+          $selectedApis = $allApis
+        } else {
+          $selectedApis = $input.Split(",") | ForEach-Object { $_.Trim() }
+        }
 
-      - name: Upload AHS.GC.Web.zip to Artifacts Release
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Web' }}
-        run: |
-          gh release upload $env:RELEASE_TAG "AHS.GC.Web.zip" --repo $env:RELEASE_REPO --clobber
+        foreach ($api in $selectedApis) {
+          if (-not ($allApis -contains $api)) {
+            Write-Error "❌ Unknown API: $api"
+            exit 1
+          }
 
-      # --- Build & Upload AHS.GC.authorizationportal ---
-      - name: Build AHS.GC.authorizationportal
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
-        shell: pwsh
-        run: |
-          $proj = Get-ChildItem "AHS.GC.authorizationportal" -Filter "*.csproj" -Recurse | Select-Object -First 1
-          if (-not $proj) { Write-Error "No .csproj found in AHS.GC.authorizationportal"; exit 1 }
-          dotnet restore $proj.FullName
-          dotnet build $proj.FullName --configuration Release --no-restore
-          Compress-Archive -Path "AHS.GC.authorizationportal/**/bin/Release/*" -DestinationPath "AHS.GC.authorizationportal.zip"
+          Write-Host "🔨 Building $api"
+          dotnet build "$api/$api.csproj" -c Release
 
-      - name: Upload AHS.GC.authorizationportal.zip to Artifacts Release
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.authorizationportal' }}
-        run: |
-          gh release upload $env:RELEASE_TAG "AHS.GC.authorizationportal.zip" --repo $env:RELEASE_REPO --clobber
+          $zipName = "$api.zip"
+          $zipPath = "$env:GITHUB_WORKSPACE\$zipName"
 
-      # --- Build & Upload Cloud Sub-APIs ---
-      - name: Build AHS.GC.Cloud subfolders
-        if: ${{ github.event.inputs.apiFolder == 'all' || github.event.inputs.apiFolder == 'AHS.GC.Cloud' }}
-        shell: pwsh
-        run: |
-          $cloudBase = "AHS.GC.Cloud"
-          $cloudSelection = '${{ github.event.inputs.cloudApi }}'
-          $cloudFolders = @()
+          Write-Host "📦 Creating ZIP: $zipName"
+          Compress-Archive -Path "$api/**/bin/Release/*" -DestinationPath $zipPath
 
-          if ($cloudSelection -ne 'all') {
-              $cloudFolders += "$cloudBase\$cloudSelection"
+          if (Test-Path $zipPath) {
+            Write-Host "📤 Uploading $zipName to release $env:RELEASE_TAG"
+            gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
           } else {
-              $cloudFolders += Get-ChildItem $cloudBase -Directory | ForEach-Object { $_.FullName }
+            Write-Error "❌ ZIP not found for $api"
+            exit 1
           }
-
-          foreach ($folder in $cloudFolders) {
-              $name = Split-Path $folder -Leaf
-              Write-Host "🔧 Building Cloud API: $name"
-              $proj = Get-ChildItem $folder -Filter "*.csproj" -Recurse | Select-Object -First 1
-              if (-not $proj) {
-                  Write-Host "❌ No .csproj found in $name"
-                  continue
-              }
-              dotnet restore $proj.FullName
-              dotnet build $proj.FullName --configuration Release --no-restore
-
-              $zipName = "$name.zip"
-              Compress-Archive -Path "$folder/**/bin/Release/*" -DestinationPath $zipName
-              gh release upload $env:RELEASE_TAG $zipName --repo $env:RELEASE_REPO --clobber
-          }
+        }
