@@ -1,10 +1,10 @@
-name: Download and Deploy APIs to EC2 (PowerShell)
+name: Download and Deploy APIs to IIS (Windows)
 
 on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'API folder to download (or "all")'
+        description: 'API folder to deploy (or "all")'
         required: true
         default: 'all'
         type: choice
@@ -15,8 +15,9 @@ on:
           - AHS.GC.ConfigAPI
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
+          - SSISAPI
       cloudApi:
-        description: 'Specific Cloud API to download (or "all")'
+        description: 'Specific Cloud API to deploy (or "all")'
         required: true
         default: 'all'
         type: choice
@@ -28,10 +29,11 @@ on:
           - assessments
           - master
           - member
+          - payor
 
 jobs:
-  download:
-    runs-on: self-hosted
+  deploy:
+    runs-on: self-hosted   # Windows runner on the IIS machine
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
       RELEASE_TAG: v8.17.2025.08_RC1
@@ -44,9 +46,6 @@ jobs:
           $artifactsPath = Join-Path $env:GITHUB_WORKSPACE "artifacts"
           if (-not (Test-Path $artifactsPath)) {
               New-Item -Path $artifactsPath -ItemType Directory | Out-Null
-              Write-Host "Created artifacts folder."
-          } else {
-              Write-Host "Artifacts folder already exists — skipping creation."
           }
 
       - name: Download Artifacts
@@ -61,7 +60,8 @@ jobs:
             "AHS.GC.authorizationportal",
             "AHS.GC.ConfigAPI",
             "AHS.GC.SmartComm",
-            "AHS.GC.Cloud"
+            "AHS.GC.Cloud",
+            "SSISAPI"
           )
           $cloudSubApis = @(
             "account",
@@ -69,7 +69,8 @@ jobs:
             "admin",
             "assessments",
             "master",
-            "member"
+            "member",
+            "payor"
           )
 
           function Download-Zip($name) {
@@ -89,64 +90,45 @@ jobs:
           }
 
           if ($apiFolder -eq "all") {
-            foreach ($api in $topLevelApis) {
-              if ($api -ne "AHS.GC.Cloud") {
-                Download-Zip $api
-              }
-            }
-          } elseif ($apiFolder -ne "AHS.GC.Cloud") {
+            foreach ($api in $topLevelApis) { Download-Zip $api }
+          } elseif ($topLevelApis -contains $apiFolder) {
             Download-Zip $apiFolder
           }
 
           if ($cloudApi -eq "all") {
-            foreach ($sub in $cloudSubApis) {
-              Download-Zip $sub
-            }
+            foreach ($sub in $cloudSubApis) { Download-Zip $sub }
           } elseif ($cloudSubApis -contains $cloudApi) {
             Download-Zip $cloudApi
           }
 
-  deploy:
-    runs-on: self-hosted
-    needs: download
-    env:
-      EC2_HOST: ${{ secrets.EC2_HOST }}
-      EC2_USER: ${{ secrets.EC2_USER }}
-      SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-
-    steps:
-      - name: Deploy to EC2 via SSH
+      - name: Deploy to IIS Folders
         shell: pwsh
         run: |
           $artifactsDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
-          $sshKeyFile = Join-Path $env:GITHUB_WORKSPACE "ssh_key.pem"
+          $deployRoot = "C:\inetpub\wwwroot\Deployment\GITHUB"
 
-          # Save SSH key
-          $env:SSH_KEY | Out-File -FilePath $sshKeyFile -Encoding ascii
-          icacls $sshKeyFile /inheritance:r /grant:r "$($env:USERNAME):(R)"
+          foreach ($zip in Get-ChildItem $artifactsDir -Filter *.zip) {
+            $name = [System.IO.Path]::GetFileNameWithoutExtension($zip.Name).ToLower()
 
-          # Ensure /tmp exists on EC2
-          cmd /c "ssh -i `"$sshKeyFile`" -o StrictHostKeyChecking=no $env:EC2_USER@$env:EC2_HOST mkdir -p /tmp"
+            switch ($name) {
+              "ahs.gc.web"               { $target = Join-Path $deployRoot "Portal" }
+              "ahs.gc.authorizationportal" { $target = Join-Path $deployRoot "AuthorizationPortal" }
+              "ahs.gc.configapi"         { $target = Join-Path $deployRoot "CONFIGAPI" }
+              "ahs.gc.smartcomm"         { $target = Join-Path $deployRoot "SmartCommAPI" }
+              "ssisapi"                  { $target = Join-Path $deployRoot "SSISAPI" }
+              "account"                  { $target = Join-Path $deployRoot "CloudAPI\Account" }
+              "activity"                 { $target = Join-Path $deployRoot "CloudAPI\Activity" }
+              "admin"                    { $target = Join-Path $deployRoot "CloudAPI\Admin" }
+              "assessments"              { $target = Join-Path $deployRoot "CloudAPI\Assessment" }
+              "master"                   { $target = Join-Path $deployRoot "CloudAPI\Master" }
+              "member"                   { $target = Join-Path $deployRoot "CloudAPI\Member" }
+              "payor"                    { $target = Join-Path $deployRoot "CloudAPI\Payor" }
+              default                    { $target = Join-Path $deployRoot $name }
+            }
 
-          # Upload all ZIP files
-          cmd /c "scp -i `"$sshKeyFile`" -o StrictHostKeyChecking=no `"$artifactsDir`\*.zip`" $env:EC2_USER@$env:EC2_HOST:/tmp/"
+            Write-Host "Deploying $name.zip to $target"
+            if (-not (Test-Path $target)) { New-Item -Path $target -ItemType Directory | Out-Null }
 
-          # Extract & deploy
-          $deployCmd = @"
-          for zip in /tmp/*.zip; do
-            name=\$(basename "\$zip" .zip)
-            case "\$name" in
-              "AHS.GC.Web") target="/var/www/Portal" ;;
-              "AHS.GC.authorizationportal") target="/var/www/AuthorizationPortal" ;;
-              "AHS.GC.ConfigAPI") target="/var/www/CONFIGAPI" ;;
-              "AHS.GC.SmartComm") target="/var/www/SmartCommAPI" ;;
-              "account"|"activity"|"admin"|"assessments"|"master"|"member") target="/var/www/CloudAPI" ;;
-              *) target="/var/www/\$name" ;;
-            esac
-            mkdir -p "\$target"
-            unzip -o "\$zip" -d "\$target"
-            rm -f "\$zip"
-          done
-          "@
-
-          cmd /c "ssh -i `"$sshKeyFile`" -o StrictHostKeyChecking=no $env:EC2_USER@$env:EC2_HOST bash -s" <<< $deployCmd
+            # Extract ZIP into target folder
+            Expand-Archive -Path $zip.FullName -DestinationPath $target -Force
+          }
