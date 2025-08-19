@@ -34,7 +34,7 @@ jobs:
     runs-on: windows-latest
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
-      RELEASE_TAG: v8.17.2025.08_RC1
+      RELEASE_TAG: v8.17.2025.08_RC2
       DOTNET_ROOT: C:\Program Files\dotnet
       GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
