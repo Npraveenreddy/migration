@@ -1,10 +1,10 @@
-name: Download and Deploy APIs to IIS (Windows)
+name: Download and Deploy APIs to IIS
 
 on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'API folder to deploy (or "all")'
+        description: 'API folder to download (or "all")'
         required: true
         default: 'all'
         type: choice
@@ -15,9 +15,8 @@ on:
           - AHS.GC.ConfigAPI
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
-          - SSISAPI
       cloudApi:
-        description: 'Specific Cloud API to deploy (or "all")'
+        description: 'Specific Cloud API to download (or "all")'
         required: true
         default: 'all'
         type: choice
@@ -32,8 +31,8 @@ on:
           - payor
 
 jobs:
-  deploy:
-    runs-on: self-hosted   # Windows runner on the IIS machine
+  download:
+    runs-on: self-hosted
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
       RELEASE_TAG: v8.17.2025.08_RC1
@@ -41,15 +40,18 @@ jobs:
 
     steps:
       - name: Ensure artifacts folder exists
-        shell: pwsh
+        shell: powershell
         run: |
           $artifactsPath = Join-Path $env:GITHUB_WORKSPACE "artifacts"
           if (-not (Test-Path $artifactsPath)) {
               New-Item -Path $artifactsPath -ItemType Directory | Out-Null
+              Write-Host "Created artifacts folder."
+          } else {
+              Write-Host "Artifacts folder already exists — skipping creation."
           }
 
       - name: Download Artifacts
-        shell: pwsh
+        shell: powershell
         run: |
           $apiFolder = "${{ github.event.inputs.apiFolder }}"
           $cloudApi  = "${{ github.event.inputs.cloudApi }}"
@@ -60,8 +62,7 @@ jobs:
             "AHS.GC.authorizationportal",
             "AHS.GC.ConfigAPI",
             "AHS.GC.SmartComm",
-            "AHS.GC.Cloud",
-            "SSISAPI"
+            "AHS.GC.Cloud"
           )
           $cloudSubApis = @(
             "account",
@@ -90,45 +91,57 @@ jobs:
           }
 
           if ($apiFolder -eq "all") {
-            foreach ($api in $topLevelApis) { Download-Zip $api }
-          } elseif ($topLevelApis -contains $apiFolder) {
+            foreach ($api in $topLevelApis) {
+              if ($api -ne "AHS.GC.Cloud") {
+                Download-Zip $api
+              }
+            }
+          } elseif ($apiFolder -ne "AHS.GC.Cloud") {
             Download-Zip $apiFolder
           }
 
           if ($cloudApi -eq "all") {
-            foreach ($sub in $cloudSubApis) { Download-Zip $sub }
+            foreach ($sub in $cloudSubApis) {
+              Download-Zip $sub
+            }
           } elseif ($cloudSubApis -contains $cloudApi) {
             Download-Zip $cloudApi
           }
 
-      - name: Deploy to IIS Folders
-        shell: pwsh
+  deploy:
+    runs-on: self-hosted
+    needs: download
+    steps:
+      - name: Deploy Artifacts to IIS Paths
+        shell: powershell
         run: |
           $artifactsDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
-          $deployRoot = "C:\inetpub\wwwroot\Deployment\GITHUB"
 
-          foreach ($zip in Get-ChildItem $artifactsDir -Filter *.zip) {
-            $name = [System.IO.Path]::GetFileNameWithoutExtension($zip.Name).ToLower()
+          $mapping = @{
+            "AHS.GC.Web"                = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal"
+            "AHS.GC.authorizationportal"= "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal"
+            "AHS.GC.ConfigAPI"          = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI"
+            "AHS.GC.SmartComm"          = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI"
+            "account"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account"
+            "activity"                  = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity"
+            "admin"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin"
+            "assessments"               = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessment"
+            "master"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master"
+            "member"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member"
+            "payor"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Payor"
+          }
 
-            switch ($name) {
-              "ahs.gc.web"               { $target = Join-Path $deployRoot "Portal" }
-              "ahs.gc.authorizationportal" { $target = Join-Path $deployRoot "AuthorizationPortal" }
-              "ahs.gc.configapi"         { $target = Join-Path $deployRoot "CONFIGAPI" }
-              "ahs.gc.smartcomm"         { $target = Join-Path $deployRoot "SmartCommAPI" }
-              "ssisapi"                  { $target = Join-Path $deployRoot "SSISAPI" }
-              "account"                  { $target = Join-Path $deployRoot "CloudAPI\Account" }
-              "activity"                 { $target = Join-Path $deployRoot "CloudAPI\Activity" }
-              "admin"                    { $target = Join-Path $deployRoot "CloudAPI\Admin" }
-              "assessments"              { $target = Join-Path $deployRoot "CloudAPI\Assessment" }
-              "master"                   { $target = Join-Path $deployRoot "CloudAPI\Master" }
-              "member"                   { $target = Join-Path $deployRoot "CloudAPI\Member" }
-              "payor"                    { $target = Join-Path $deployRoot "CloudAPI\Payor" }
-              default                    { $target = Join-Path $deployRoot $name }
+          Get-ChildItem $artifactsDir -Filter *.zip | ForEach-Object {
+            $name = $_.BaseName
+            if ($mapping.ContainsKey($name)) {
+              $target = $mapping[$name]
+              if (-not (Test-Path $target)) {
+                New-Item -Path $target -ItemType Directory -Force | Out-Null
+              }
+              Write-Host "Deploying $name.zip to $target ..."
+              Expand-Archive -Path $_.FullName -DestinationPath $target -Force
+              Remove-Item $_.FullName -Force
+            } else {
+              Write-Warning "No mapping defined for $name.zip — skipping."
             }
-
-            Write-Host "Deploying $name.zip to $target"
-            if (-not (Test-Path $target)) { New-Item -Path $target -ItemType Directory | Out-Null }
-
-            # Extract ZIP into target folder
-            Expand-Archive -Path $zip.FullName -DestinationPath $target -Force
           }
