@@ -112,36 +112,59 @@ jobs:
     runs-on: self-hosted
     needs: download
     steps:
-      - name: Deploy Artifacts to IIS Paths
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: apis
+          path: artifacts
+  
+      - name: Deploy APIs to IIS folders
         shell: powershell
         run: |
           $artifactsDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
-
-          $mapping = @{
-            "AHS.GC.Web"                 = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal"
-            "AHS.GC.authorizationportal" = "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal"
-            "AHS.GC.ConfigAPI"           = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI"
-            "AHS.GC.SmartComm"           = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI"
-            "account"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account"
-            "activity"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity"
-            "admin"                      = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin"
-            "assessments"                = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessment"
-            "master"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master"
-            "member"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member"
-            "payor"                      = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Payor"
+          $tempDir = Join-Path $env:GITHUB_WORKSPACE "temp"
+  
+          if (-not (Test-Path $tempDir)) {
+            New-Item -Path $tempDir -ItemType Directory | Out-Null
           }
-
+  
+          # Mapping of zip names to IIS folders
+          $mapping = @{
+            "AHS.GC.Web"               = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal"
+            "AHS.GC.authorizationportal" = "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal"
+            "AHS.GC.ConfigAPI"         = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI"
+            "AHS.GC.SmartComm"         = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI"
+            "account"                  = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account"
+            "activity"                 = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity"
+            "admin"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin"
+            "assessments"              = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessments"
+            "master"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master"
+            "member"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member"
+          }
+  
+          # Process all zip files
           Get-ChildItem $artifactsDir -Filter *.zip | ForEach-Object {
             $name = $_.BaseName
             if ($mapping.ContainsKey($name)) {
               $target = $mapping[$name]
-              if (-not (Test-Path $target)) {
-                New-Item -Path $target -ItemType Directory -Force | Out-Null
+              Write-Host "Deploying $($_.Name) to $target ..."
+  
+              $extractPath = Join-Path $tempDir $name
+  
+              if (Test-Path $extractPath) {
+                Remove-Item $extractPath -Recurse -Force
               }
-              Write-Host "Deploying $name.zip to $target ..."
-              Expand-Archive -Path $_.FullName -DestinationPath $target -Force
+              New-Item -Path $extractPath -ItemType Directory | Out-Null
+  
+              # Extract to temp folder
+              Expand-Archive -Path $_.FullName -DestinationPath $extractPath -Force
+  
+              # Use robocopy to sync to IIS folder
+              robocopy $extractPath $target /E /MIR /R:3 /W:5
+  
+              # Clean up zip
               Remove-Item $_.FullName -Force
             } else {
-              Write-Warning "No mapping defined for $name.zip - skipping."
+              Write-Warning "No mapping found for $name.zip, skipping..."
             }
           }
