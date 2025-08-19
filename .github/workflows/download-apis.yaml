@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       apiFolder:
-        description: 'API folder to download (or "all")'
+        description: "API folder to download (or 'all')"
         required: true
-        default: 'all'
+        default: "all"
         type: choice
         options:
           - all
@@ -16,9 +16,9 @@ on:
           - AHS.GC.SmartComm
           - AHS.GC.Cloud
       cloudApi:
-        description: 'Specific Cloud API to download (or "all")'
+        description: "Specific Cloud API to download (or 'all')"
         required: true
-        default: 'all'
+        default: "all"
         type: choice
         options:
           - all
@@ -47,7 +47,7 @@ jobs:
               New-Item -Path $artifactsPath -ItemType Directory | Out-Null
               Write-Host "Created artifacts folder."
           } else {
-              Write-Host "Artifacts folder already exists — skipping creation."
+              Write-Host "Artifacts folder already exists - skipping creation."
           }
 
       - name: Download Artifacts
@@ -118,17 +118,17 @@ jobs:
           $artifactsDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
 
           $mapping = @{
-            "AHS.GC.Web"                = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal"
-            "AHS.GC.authorizationportal"= "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal"
-            "AHS.GC.ConfigAPI"          = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI"
-            "AHS.GC.SmartComm"          = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI"
-            "account"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account"
-            "activity"                  = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity"
-            "admin"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin"
-            "assessments"               = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessment"
-            "master"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master"
-            "member"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member"
-            "payor"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Payor"
+            "AHS.GC.Web"                 = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal"
+            "AHS.GC.authorizationportal" = "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal"
+            "AHS.GC.ConfigAPI"           = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI"
+            "AHS.GC.SmartComm"           = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI"
+            "account"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account"
+            "activity"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity"
+            "admin"                      = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin"
+            "assessments"                = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessment"
+            "master"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master"
+            "member"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member"
+            "payor"                      = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Payor"
           }
 
           Get-ChildItem $artifactsDir -Filter *.zip | ForEach-Object {
@@ -142,6 +142,6 @@ jobs:
               Expand-Archive -Path $_.FullName -DestinationPath $target -Force
               Remove-Item $_.FullName -Force
             } else {
-              Write-Warning "No mapping defined for $name.zip — skipping."
+              Write-Warning "No mapping defined for $name.zip - skipping."
             }
           }
