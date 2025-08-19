@@ -112,61 +112,54 @@ jobs:
   deploy:
     runs-on: self-hosted
     needs: download
-
     steps:
-      - name: Download artifacts
+      - name: Download artifacts from previous job
         uses: actions/download-artifact@v4
         with:
-          name: apis
+          name: apis-to-deploy
           path: artifacts
 
-      - name: Deploy APIs to IIS folders
-        shell: powershell
+      - name: Deploy APIs to IIS
+        shell: pwsh
         run: |
           $artifactsDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
           $tempDir = Join-Path $env:GITHUB_WORKSPACE "temp"
 
           if (-not (Test-Path $tempDir)) {
-            New-Item -Path $tempDir -ItemType Directory | Out-Null
+              New-Item -Path $tempDir -ItemType Directory | Out-Null
           }
 
-          # Mapping of zip names to IIS folders
-          $mapping = @{
-            "AHS.GC.Web"                 = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal"
-            "AHS.GC.authorizationportal" = "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal"
-            "AHS.GC.ConfigAPI"           = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI"
-            "AHS.GC.SmartComm"           = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI"
-            "account"                    = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account"
-            "activity"                   = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity"
-            "admin"                      = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin"
-            "assessments"                = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessments"
-            "master"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master"
-            "member"                     = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member"
-          }
-
-          # Process all zip files
-          Get-ChildItem $artifactsDir -Filter *.zip | ForEach-Object {
-            $name = $_.BaseName
-            if ($mapping.ContainsKey($name)) {
-              $target = $mapping[$name]
-              Write-Host "Deploying $($_.Name) to $target ..."
-
+          Get-ChildItem -Path $artifactsDir -Filter *.zip | ForEach-Object {
+              $zip = $_.FullName
+              $name = $_.BaseName
               $extractPath = Join-Path $tempDir $name
 
-              if (Test-Path $extractPath) {
-                Remove-Item $extractPath -Recurse -Force
+              Write-Host "Extracting $($_.Name) to $extractPath ..."
+              if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
+              Expand-Archive -Path $zip -DestinationPath $extractPath -Force
+
+              switch ($name) {
+                "AHS.GC.Web"                  { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\Portal" }
+                "AHS.GC.authorizationportal"  { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\AuthorizationPortal" }
+                "AHS.GC.ConfigAPI"            { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CONFIGAPI" }
+                "AHS.GC.SmartComm"            { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\SmartCommAPI" }
+                "account" { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Account" }
+                "activity" { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Activity" }
+                "admin" { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Admin" }
+                "assessments" { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Assessments" }
+                "master" { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Master" }
+                "member" { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\CloudAPI\Member" }
+                Default { $target = "C:\inetpub\wwwroot\Deployment\GITHUB\$name" }
               }
-              New-Item -Path $extractPath -ItemType Directory | Out-Null
 
-              # Extract to temp folder
-              Expand-Archive -Path $_.FullName -DestinationPath $extractPath -Force
-
-              # Sync to IIS folder
-              robocopy $extractPath $target /E /MIR /R:3 /W:5
-
-              # Clean up zip
-              Remove-Item $_.FullName -Force
-            } else {
-              Write-Warning "No mapping found for $name.zip, skipping..."
-            }
+              Write-Host "Deploying $($_.Name) to $target ..."
+              robocopy $extractPath $target /MIR /R:3 /W:5
+              
+              # ✅ Handle Robocopy exit codes
+              if ($LASTEXITCODE -lt 8) {
+                  Write-Host "Robocopy completed successfully with exit code $LASTEXITCODE"
+              } else {
+                  Write-Error "Robocopy failed with exit code $LASTEXITCODE"
+                  exit $LASTEXITCODE
+              }
           }
