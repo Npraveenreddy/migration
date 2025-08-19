@@ -113,10 +113,10 @@ jobs:
     runs-on: self-hosted
     needs: download
     steps:
-      - name: Download artifacts from previous job
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: apis-to-deploy
+          name: apis
           path: artifacts
 
       - name: Deploy APIs to IIS
