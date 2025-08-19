@@ -34,7 +34,7 @@ jobs:
     runs-on: self-hosted
     env:
       RELEASE_REPO: Npraveenreddy/artifacts
-      RELEASE_TAG: v8.17.2025.08_RC1
+      RELEASE_TAG: ${{ secrets.TAG }}
       GH_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
     steps:
