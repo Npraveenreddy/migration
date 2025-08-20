@@ -39,15 +39,15 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
 
     steps:
-    - name: 📦 Checkout code
+    - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: 🛠️ Setup .NET
+    - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '6.0.x'
 
-    - name: 🔧 Build Selected APIs and Upload Artifacts
+    - name: Build Selected APIs and Upload Artifacts
       shell: pwsh
       run: |
         $apiFolder = "${{ github.event.inputs.apiFolder }}"
@@ -70,32 +70,32 @@ jobs:
         )
 
         function BuildAndUpload($path, $name) {
-          Write-Host "🔨 Building $name"
+          Write-Host "Building $name"
           $proj = Get-ChildItem $path -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $proj) {
-            Write-Error "❌ No .csproj found in $name"
+            Write-Error "No .csproj found in $name"
             exit 1
           }
           dotnet restore $proj.FullName
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ Restore failed for $name"
+            Write-Error "Restore failed for $name"
             exit 1
           }
           dotnet build $proj.FullName --configuration Release --no-restore
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ Build failed for $name"
+            Write-Error "Build failed for $name"
             exit 1
           }
           $outputPath = Join-Path $path "bin\Release\net6.0"
           $zipPath = "$workspace\$name.zip"
-          Write-Host "📦 Zipping contents of: $outputPath"
+          Write-Host "Zipping contents of: $outputPath"
           Compress-Archive -Path "$outputPath\*" -DestinationPath $zipPath
           if (Test-Path $zipPath) {
             echo $env:GITHUB_TOKEN | gh auth login --with-token
             gh release upload $env:RELEASE_TAG $zipPath --repo $env:RELEASE_REPO --clobber
-            Write-Host "✅ Uploaded $name.zip to release $env:RELEASE_TAG"
+            Write-Host "Uploaded $name.zip to release $env:RELEASE_TAG"
           } else {
-            Write-Error "❌ ZIP not found for $name"
+            Write-Error "ZIP not found for $name"
             exit 1
           }
         }
